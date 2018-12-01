@@ -28,19 +28,22 @@ class AlignedDataset(BaseDataset):
         AB_path = self.AB_paths[index]
         AB = Image.open(AB_path).convert('RGB')
         # AB = Image.open(AB_path)
-        AB = AB.resize((self.opt.loadSizeX * 2, self.opt.loadSizeY), Image.BICUBIC)
+        # AB = AB.resize((self.opt.loadSizeX * 2, self.opt.loadSizeY), Image.BICUBIC)
         AB = self.transform(AB)
 
-        w_total = AB.size(2)
-        w = int(w_total / 2)
-        h = AB.size(1)
-        w_offset = random.randint(0, max(0, w - self.opt.fineSize - 1))
-        h_offset = random.randint(0, max(0, h - self.opt.fineSize - 1))
+        # w_total = AB.size(2)
+        # w = int(w_total / 2)
+        # h = AB.size(1)
+        # w_offset = random.randint(0, max(0, w - self.opt.fineSize - 1))
+        # h_offset = random.randint(0, max(0, h - self.opt.fineSize - 1))
+        #
+        # A = AB[:, h_offset:h_offset + self.opt.fineSize, # blurred img
+        #        w_offset:w_offset + self.opt.fineSize]
+        # B = AB[:, h_offset:h_offset + self.opt.fineSize, # sharp img
+        #        w + w_offset:w + w_offset + self.opt.fineSize]
 
-        A = AB[:, h_offset:h_offset + self.opt.fineSize, # blurred img
-               w_offset:w_offset + self.opt.fineSize]
-        B = AB[:, h_offset:h_offset + self.opt.fineSize, # sharp img
-               w + w_offset:w + w_offset + self.opt.fineSize]
+        A = AB[:, 0:128, 0:128]
+        B = AB[:, 0:128, 128:256]
 
         lr_tranform = train_lr_transform(self.opt.fineSize, 4)
         A = lr_tranform(A)
@@ -62,8 +65,7 @@ class AlignedDataset(BaseDataset):
             C = C.index_select(2, idx_C)
 
 
-        return {'A': A, 'B': B, 'C': C, # A是LR_Blur， B是HR_Sharp, C是LR_Sharp
-                'A_paths': AB_path, 'B_paths': AB_path, 'C_paths': AB_path}
+        return {'LR_Blur': A, 'HR_Sharp': B, 'LR_Sharp': C} # A是LR_Blur， B是HR_Sharp, C是LR_Sharp
 
     def __len__(self):
         return len(self.AB_paths)
@@ -75,6 +77,6 @@ class AlignedDataset(BaseDataset):
 def train_lr_transform(crop_size, upscale_factor):
     return Compose([
         ToPILImage(),
-        Resize(crop_size // upscale_factor, interpolation=Image.BICUBIC),
+        Resize(128 // upscale_factor, interpolation=Image.BICUBIC),
         ToTensor()
     ])

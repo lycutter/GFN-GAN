@@ -1,53 +1,32 @@
 import torch
 import torch.nn as nn
-import numpy as np
-
-
-def weights_init(m):
-    classname = m.__class__.__name__
-    if classname.find('Conv') != -1:
-        m.weight.data.normal_(0.0, 0.02)
-        if hasattr(m.bias, 'data'):
-            m.bias.data.fill_(0)
-    elif classname.find('BatchNorm2d') != -1:
-        m.weight.data.normal_(1.0, 0.02)
-        m.bias.data.fill_(0)
-
+from spectral import SpectralNorm
+from SAGFN import Self_Attn
 class Discriminator(nn.Module):
 
     def __init__(self):
         super(Discriminator, self).__init__()
+        self.conv_1 = nn.Sequential(SpectralNorm(nn.Conv2d(3, 64, kernel_size=4, stride=2, padding=1)),
+                                    nn.LeakyReLU(0.2))
+        self.conv_2 = nn.Sequential(SpectralNorm(nn.Conv2d(64, 128, kernel_size=4, stride=2, padding=1)),
+                                    nn.LeakyReLU(0.2))
+        self.conv_3 = nn.Sequential(SpectralNorm(nn.Conv2d(128, 256, kernel_size=4, stride=2, padding=1)),
+                                    nn.LeakyReLU(0.2))
+        self.conv_4 = nn.Sequential(SpectralNorm(nn.Conv2d(256, 512, kernel_size=4, stride=2, padding=1)),
+                                    nn.LeakyReLU(0.2))
+        self.conv_5 = nn.Sequential(SpectralNorm(nn.Conv2d(512, 1, kernel_size=4, stride=2, padding=1)))
 
-        kw = 4
-        padw = int(np.ceil(kw-1)/2)
-        sequence = [
-            nn.Conv2d(3, 64, kernel_size=kw, stride=2, padding=padw),
-            nn.LeakyReLU(0.2, True)
-        ]
-        nf_mult = 1
-        nf_mult_prev = 1
-        for n in range(1, 3):
-            nf_mult_prev = nf_mult
-            nf_mult = min(2**n, 8)
-            sequence += [
-                nn.Conv2d(64 * nf_mult_prev, 64 * nf_mult,
-                          kernel_size=kw, stride=2, padding=padw, bias=True),
-                nn.BatchNorm2d(64 * nf_mult),
-                nn.LeakyReLU(0.2, True)
-            ]
-        nf_mult_prev = nf_mult
-        nf_mult = min(2 ** 3, 8)
-        sequence += [
-            nn.Conv2d(64 * nf_mult_prev, 64 * nf_mult,
-                      kernel_size=kw, stride=1, padding=padw, bias=True),
-            nn.BatchNorm2d(64 * nf_mult),
-            nn.LeakyReLU(0.2, True)
-        ]
+        self.attn1 = Self_Attn(128, 'relu')
 
-        sequence += [nn.Conv2d(64 * nf_mult, 1, kernel_size=kw, stride=1, padding=padw)]
+    def forward(self, x):
 
-        self.model = nn.Sequential(*sequence)
+        out1 = self.conv_1(x)
+        out2 = self.conv_2(out1)
+        out2, p1 = self.attn1(out2)
+        out3 = self.conv_3(out2)
+        out4 = self.conv_4(out3)
 
-    def forward(self, input):
-        out = self.model(input)
+        out = self.conv_5(out4)
+
+
         return out

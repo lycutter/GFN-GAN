@@ -15,17 +15,15 @@ from torch.autograd import Variable
 import os
 from os.path import join
 import torch
-from torch.utils.data import DataLoader
-from datasets.dataset_hf5 import DataSet
-from networks.GFN_4x import Net
+from SAGFN import Net
 import random
 import re
 from torchvision import transforms
 
 from data.data_loader import CreateDataLoader
 # from networks.Discriminator import Discriminator
-from networks.Discriminator import Discriminator
-
+from ESRDiscriminator import Discriminator
+from ESRGANLoss import GANLoss, VGGFeatureExtractor
 
 # Training settings
 parser = argparse.ArgumentParser(description="PyTorch Train")
@@ -42,7 +40,7 @@ parser.add_argument("--scale", default=4, type=int, help="Scale factor, Default:
 parser.add_argument("--lambda_db", type=float, default=0.5, help="Weight of deblurring loss, default=0.5")
 parser.add_argument("--gated", type=bool, default=False, help="Activated gate module")
 parser.add_argument("--isTest", type=bool, default=False, help="Test or not")
-parser.add_argument('--dataset', required=True, help='Path of the training dataset(.h5)')
+# parser.add_argument('--dataset', required=True, help='Path of the training dataset(.h5)')
 
 
 # add lately
@@ -60,11 +58,37 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 LAMBDA = 10
 FilePath = './models/loss.txt'
 
+FirstTrian = False
+
+
 training_settings=[
-    {'nEpochs': 25, 'lr': 1e-4, 'step':  7, 'lr_decay': 0.95, 'lambda_db': 0.5, 'gated': False},
-    {'nEpochs': 60, 'lr': 5e-5, 'step': 30, 'lr_decay': 0.95, 'lambda_db': 0.5, 'gated': False},
-    {'nEpochs': 85, 'lr': 5e-5, 'step': 25, 'lr_decay': 0.9, 'lambda_db': 0, 'gated': True}
+    {'nEpochs': 25, 'lr': 1e-4, 'step':  7, 'lr_decay': 0.5, 'lambda_db': 0.5, 'gated': False},
+    {'nEpochs': 60, 'lr': 1e-4, 'step': 30, 'lr_decay': 0.1, 'lambda_db': 0.5, 'gated': False},
+    {'nEpochs': 55, 'lr': 5e-5, 'step': 25, 'lr_decay': 0.1, 'lambda_db':   0, 'gated': True}
 ]
+
+
+def adjust_learning_rate(epoch):
+    lr = opt.lr * (opt.lr_decay ** (epoch // opt.step))
+    print(lr)
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = lr
+    return lr
+
+
+# if FirstTrian:
+#
+#     training_settings=[
+#         {'nEpochs': 30, 'lr': 1e-4, 'step':  7, 'lr_decay': 0.95, 'lambda_db': 0.5, 'gated': False},
+#         {'nEpochs': 60, 'lr': 5e-5, 'step': 30, 'lr_decay': 0.95, 'lambda_db': 0.5, 'gated': False},
+#         {'nEpochs': 85, 'lr': 5e-5, 'step': 25, 'lr_decay': 0.9, 'lambda_db': 0, 'gated': True}
+#     ]
+# else:
+#     training_settings=[
+#         {'nEpochs': 30, 'lr': 5e-5, 'step':  7, 'lr_decay': 0.95, 'lambda_db': 0.5, 'gated': False},
+#         {'nEpochs': 60, 'lr': 2e-5, 'step': 30, 'lr_decay': 0.95, 'lambda_db': 0.5, 'gated': False},
+#         {'nEpochs': 100, 'lr': 2e-5, 'step': 25, 'lr_decay': 0.90, 'lambda_db': 0, 'gated': True}
+#     ]
 
 def mkdir_steptraing():
     root_folder = os.path.abspath('.')
@@ -83,16 +107,19 @@ def is_hdf5_file(filename):
 def which_trainingstep_epoch(resume):
     trainingstep = "".join(re.findall(r"\d", resume)[0])
     start_epoch = "".join(re.findall(r"\d", resume)[1:])
-    return int(trainingstep), int(start_epoch) + 1
+    return int(trainingstep), int(start_epoch)
 
-def adjust_learning_rate(epoch):
-        # lr = opt.lr * (opt.lr_decay ** (epoch // opt.step))
-        # lr = opt.lr
-        if (epoch-1) % 3 == 0:
-            opt.lr = opt.lr * opt.lr_decay
-        print("learning_rate:",opt.lr)
-        for param_group in optimizer.param_groups:
-            param_group['lr'] = opt.lr
+# def adjust_learning_rate(epoch):
+#         # lr = opt.lr * (opt.lr_decay ** (epoch // opt.step))
+#         # lr = opt.lr
+#         if (epoch-1) % 3 == 0:
+#             opt.lr = opt.lr * opt.lr_decay
+#         print("learning_rate:",opt.lr)
+#         for param_group in optimizer.param_groups:
+#             param_group['lr'] = opt.lr
+
+
+
 
 def checkpoint(step, epoch):
     model_out_path = "models/{}/GFN_epoch_{}.pkl".format(step, epoch)
@@ -101,30 +128,24 @@ def checkpoint(step, epoch):
     torch.save(netD, model_out_path_D)
     print("===>Checkpoint saved to {}".format(model_out_path))
 
-def train(train_gen, model, netD, criterion, optimizer, epoch):
+def train(train_gen, model, netD, criterion, optimizer, epoch, lr):
     epoch_loss = 0
-    # train_gen = train_gen.load_data() ###############
+    train_gen = train_gen.load_data() ###############
     for iteration, batch in enumerate(train_gen):
         #input, targetdeblur, targetsr
-        LR_Blur = batch[0]
-        LR_Deblur = batch[1]
-        HR = batch[2]
+        # LR_Blur = batch[0]
+        # LR_Deblur = batch[1]
+        # HR = batch[2]
         #
-        # LR_Blur = batch['A']
-        # LR_Deblur = batch['C']
-        # HR = batch['B']
+        LR_Blur = batch['LR_Blur']
+        LR_Deblur = batch['LR_Sharp']
+        HR = batch['HR_Sharp']
 
         LR_Blur = LR_Blur.to(device)
         LR_Deblur = LR_Deblur.to(device)
         HR = HR.to(device)
 
-        # show the pictures
-        # LRB = transforms.ToPILImage()(LR_Blur.cpu()[0])
-        # LRB.save('./pictureShow/LRB.jpg')
-        # LRD = transforms.ToPILImage()(LR_Deblur.cpu()[0])
-        # LRD.save('./pictureShow/LRD.jpg')
-        # HRP = transforms.ToPILImage()(HR.cpu()[0])
-        # HRP.save('./pictureShow/HRP.jpg')
+
 
         if opt.isTest == True:
             test_Tensor = torch.cuda.FloatTensor().resize_(1).zero_()+1.
@@ -143,55 +164,14 @@ def train(train_gen, model, netD, criterion, optimizer, epoch):
 
 
         # calculate loss_D
-        fake_sr = netD(sr)
+        fake_sr = netD(sr).detach()
         real_sr = netD(HR)
 
-        # fake_lr_deblur = netD(lr_deblur)
-        # real_lr_deblur = netD(LR_Deblur)
+        d_loss_real = cri_gan(real_sr - torch.mean(fake_sr), True)
+        d_loss_fake = cri_gan(fake_sr - torch.mean(real_sr), False)
 
-        d_loss_real = torch.mean(real_sr)
-        d_loss_fake = torch.mean(fake_sr)
+        loss_D = (d_loss_real + d_loss_fake) / 2
 
-        # d_loss_real_lr = torch.mean(real_lr_deblur)
-        # d_loss_fake_lr = torch.mean(fake_lr_deblur)
-
-        # Compute gradient penalty of HR and sr
-        alpha = torch.rand(HR.size(0), 1, 1, 1).cuda().expand_as(HR)
-        interpolated = Variable(alpha * HR.data + (1 - alpha) * sr.data, requires_grad=True)
-        disc_interpolates = netD(interpolated)
-
-        grad = torch.autograd.grad(outputs=disc_interpolates,
-                                   inputs=interpolated,
-                                   grad_outputs=torch.ones(disc_interpolates.size()).cuda(),
-                                   retain_graph=True,
-                                   create_graph=True,
-                                   only_inputs=True)[0]
-
-        grad = grad.view(grad.size(0), -1)
-        grad_l2norm = torch.sqrt(torch.sum(grad ** 2, dim=1))
-        d_loss_gp = torch.mean((grad_l2norm - 1) ** 2)
-
-        # # Compute gradient penalty of deblur
-        # alpha = torch.rand(LR_Deblur.size(0), 1, 1, 1).cuda().expand_as(LR_Deblur)
-        # interpolated = Variable(alpha * LR_Deblur.data + (1 - alpha) * lr_deblur.data, requires_grad=True)
-        # disc_interpolates = netD(interpolated)
-        #
-        # grad = torch.autograd.grad(outputs=disc_interpolates,
-        #                            inputs=interpolated,
-        #                            grad_outputs=torch.ones(disc_interpolates.size()).cuda(),
-        #                            retain_graph=True,
-        #                            create_graph=True,
-        #                            only_inputs=True)[0]
-        #
-        # grad = grad.view(grad.size(0), -1)
-        # grad_l2norm = torch.sqrt(torch.sum(grad ** 2, dim=1))
-        # d_loss_gp_lr = torch.mean((grad_l2norm - 1) ** 2)
-
-        # Backward + Optimize
-        gradient_penalty = LAMBDA * d_loss_gp
-        # gradient_penalty_lr = LAMBDA * d_loss_gp_lr
-
-        loss_D = d_loss_fake - d_loss_real + gradient_penalty
 
         optimizer_D.zero_grad()
         loss_D.backward(retain_graph=True)
@@ -202,34 +182,42 @@ def train(train_gen, model, netD, criterion, optimizer, epoch):
 
 
         # calculate loss_G
-        loss_G_GAN = - netD(sr).mean()
-        # loss_G_GAN_lr = - netD(lr_deblur).mean()
+        fake_sr = netD(sr).detach()
+        real_sr = netD(HR)
+        g_loss_real = cri_gan(real_sr - torch.mean(fake_sr), False)
+        g_loss_fake = cri_gan(fake_sr - torch.mean(real_sr), True)
+        loss_G_GAN = (g_loss_fake + g_loss_real) / 2
+
+        # loss_G_GAN = - netD(sr).mean()
         loss1 = criterion(lr_deblur, LR_Deblur)
-        loss2 = criterion(sr, HR)
-        image_loss = opt.lambda_db * loss1 + loss2
-        Loss_G = loss2 + opt.lambda_db * loss1 + loss_G_GAN * 0.001
+        loss2 = cri_perception(lr_deblur, LR_Deblur)
+        loss3 = cri_perception(sr, HR)
+        loss4 = criterion(sr, HR)
+        image_loss = opt.lambda_db * (loss1 + loss2) + (loss3 + loss4)
+        Loss_G = image_loss + loss_G_GAN * 0.005
         epoch_loss += Loss_G
         optimizer.zero_grad()
         Loss_G.backward()
         optimizer.step()
 
 
-        if iteration % 50 == 0:
+        if iteration % 200 == 0:
             # print("===> Epoch[{}]: G_GAN:{:.4f}, LossG:{:.4f}, LossD:{:.4f}, gredient_penalty:{:.4f}, d_real_loss:{:.4f}, d_fake_loss:{:.4f}"
             #       .format(epoch, loss_G_GAN.cpu(), mse.cpu(), loss_D.cpu(), gradient_penalty.cpu(), d_loss_real.cpu(), d_loss_fake.cpu()))
 
-            print("===> Epoch[{}]: G_GAN:{:.4f}, image_loss:{:.4f}, LossG:{:.4f}, LossD:{:.4f}, penalty:{:.4f}, d_real:{:.4f}, d_fake:{:.4f}"
-                  .format(epoch, loss_G_GAN.cpu(), image_loss.cpu(), Loss_G.cpu(), loss_D.cpu(), gradient_penalty.cpu(), d_loss_real.cpu(), d_loss_fake.cpu()))
+            print("===> Epoch[{}]: G_GAN:{:.4f}, image_loss:{:.4f}, LossG:{:.4f}, LossD:{:.4f}, d_real:{:.4f}, d_fake:{:.4f}"
+                  .format(epoch, loss_G_GAN.cpu(), image_loss.cpu(), Loss_G.cpu(), loss_D.cpu(), d_loss_real.cpu(), d_loss_fake.cpu()))
 
             f = open(FilePath, 'a')
             f.write(
-                "===> Epoch[{}]: G_GAN:{:.4f}, image_loss:{:.4f}, LossG:{:.4f}, LossD:{:.4f}, d_real_loss:{:.6f}, d_fake_loss:{:.6f}, penalty:{:.4f}"
-                .format(epoch, loss_G_GAN.cpu(), image_loss.cpu(), Loss_G.cpu(), loss_D.cpu(), d_loss_real.cpu(), d_loss_fake.cpu(),
-                        gradient_penalty.cpu()) + '\n')
+                "===> Epoch[{}]: G_GAN:{:.4f}, image_loss:{:.4f}, LossG:{:.4f}, LossD:{:.4f}, d_real_loss:{:.6f}, d_fake_loss:{:.6f}, lr:{:.8f}"
+                .format(epoch, loss_G_GAN.cpu(), image_loss.cpu(), Loss_G.cpu(), loss_D.cpu(), d_loss_real.cpu(), d_loss_fake.cpu(),lr) + '\n')
             f.close()
-            sr_save = transforms.ToPILImage()(sr.cpu()[0])
+            sr_save = torch.clamp(sr, min=0, max=1)
+            sr_save = transforms.ToPILImage()(sr_save.cpu()[0])
             sr_save.save('./pictureShow/sr_save.png')
-            deblur_lr_save = transforms.ToPILImage()(lr_deblur.cpu()[0])
+            deblur_lr_save = torch.clamp(lr_deblur, min=0, max=1)
+            deblur_lr_save = transforms.ToPILImage()(deblur_lr_save.cpu()[0])
             deblur_lr_save.save('./pictureShow/deblur_lr_save.png')
             hr_save = transforms.ToPILImage()(HR.cpu()[0])
             hr_save.save('./pictureShow/hr_save.png')
@@ -244,15 +232,9 @@ def train(train_gen, model, netD, criterion, optimizer, epoch):
     f.close()
 
 opt = parser.parse_args()
-opt.seed = random.randint(1, 100)
+opt.seed = random.randint(1, 1200)
 torch.manual_seed(opt.seed)
 torch.cuda.manual_seed(opt.seed)
-
-
-
-train_dir = opt.dataset
-train_sets = [x for x in sorted(os.listdir(train_dir)) if is_hdf5_file(x)]
-print("===> Loading model and criterion")
 
 
 
@@ -272,15 +254,14 @@ else:
 
 model = model.to(device)
 netD = netD.to(device)
-criterion = torch.nn.MSELoss(size_average=True)
+criterion = torch.nn.L1Loss(size_average=True)
 criterion = criterion.to(device)
+cri_perception = VGGFeatureExtractor().to(device)
+cri_gan =  GANLoss('vanilla', 1.0, 0.0).to(device)
 optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), 0.0001, [0.9, 0.999])
-optimizer_D = torch.optim.Adam(filter(lambda p: p.requires_grad, netD.parameters()), 0.0004, [0.9, 0.999])
+optimizer_D = torch.optim.Adam(filter(lambda p: p.requires_grad, netD.parameters()), 0.0002, [0.9, 0.999])
 print()
 
-
-
-opt.start_training_step = 2
 
 for i in range(opt.start_training_step, 4):
     opt.nEpochs   = training_settings[i-1]['nEpochs']
@@ -291,17 +272,8 @@ for i in range(opt.start_training_step, 4):
     opt.gated     = training_settings[i-1]['gated']
     print(opt)
     for epoch in range(opt.start_epoch, opt.nEpochs+1):
-        adjust_learning_rate(epoch-1)
-        random.shuffle(train_sets)
-        for j in range(len(train_sets)):
-            print("Step {}:Training folder is {}-------------------------------".format(i, train_sets[j]))
-            train_set = DataSet(join(train_dir, train_sets[j]))
-            trainloader = DataLoader(dataset=train_set, batch_size=opt.batchSize, shuffle=True, num_workers=0)
-
-            # trainloader = CreateDataLoader(opt)
-
-            train(trainloader, model, netD, criterion, optimizer, epoch)
-
+        lr = adjust_learning_rate(epoch-1)
+        trainloader = CreateDataLoader(opt)
+        train(trainloader, model, netD, criterion, optimizer, epoch, lr)
         if epoch % 5 == 0:
             checkpoint(i, epoch)
-
