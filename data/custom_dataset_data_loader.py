@@ -5,7 +5,9 @@ from data.base_data_loader import BaseDataLoader
 def CreateDataset(opt):
     dataset = None
     if opt.dataset_mode == 'aligned':
-        from data.aligned_dataset import AlignedDataset
+        # from data.aligned_dataset import AlignedDataset # 一般去模糊
+        # from data.alignedDatasetSRN import AlignedDataset # 腾讯去模糊
+        from data.alignedDatasetGFNSRN import AlignedDataset # 腾讯超分辨率
         dataset = AlignedDataset()
     elif opt.dataset_mode == 'unaligned':
         from data.unaligned_dataset import UnalignedDataset

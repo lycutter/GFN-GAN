@@ -25,6 +25,7 @@ import re
 import numpy as np
 from PIL import Image
 from torchvision.transforms import Compose, RandomCrop, ToTensor, ToPILImage, CenterCrop, Resize, Normalize
+from SAGFN_MSRN_SRN import Net
 
 parser = argparse.ArgumentParser(description="PyTorch LapSRN Test")
 parser.add_argument("--scale", default=4, type=int, help="scale factor, Default: 4")
@@ -104,9 +105,9 @@ def test(test_gen, model, criterion, SR_dir):
             resultSRDeblur = transforms.ToPILImage()(sr.cpu()[0])
             resultSRDeblur.save(join(SR_dir, '{0:04d}_GFN_4x.png'.format(iteration)))
             print("Processing {}".format(iteration))
-            # mse = criterion(sr, HR)
-            # psnr = 10 * log10(1 / mse)
-            # avg_psnr += psnr
+            mse = criterion(sr, HR)
+            psnr = 10 * log10(1 / mse)
+            avg_psnr += psnr
 
         print("Avg. SR PSNR:{:4f} dB".format(avg_psnr / iteration))
         median_time = statistics.median(med_time)
@@ -143,11 +144,14 @@ if opt.intermediate_process:
 else:
     test_dir = 'models/'
     test_list = [x for x in sorted(os.listdir(test_dir)) if is_pkl(x)]
-    # test_list = ['3/GFN_epoch_55.pkl']
+    test_list = ['D:/pythonWorkplace/GFN-GAN/models/weight_test/GFN_epoch_55_MSRN.pkl']
+    test_list = 'D:/pythonWorkplace/GFN-GAN/models/weight_test/GFN_epoch_55_MSRN.pkl'
     print("Testing on the given 3-step trained model which stores in /models, and ends with pkl.")
-    for i in range(len(test_list)):
-        print("Testing model is {}----------------------------------".format(test_list[i]))
-        model = torch.load(join(test_dir, test_list[i]))
-        model_test(model)
+
+    model = Net()
+    model = torch.load(test_list)
+    model.load_state_dict(model.state_dict())
+    # model = torch.load(join(test_dir, test_list[i]))
+    model_test(model)
 
 

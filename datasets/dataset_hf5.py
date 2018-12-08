@@ -10,14 +10,25 @@ import sys
 import os
 from os.path import join
 from torch.utils.data import DataLoader
-
+from torchvision.transforms import Compose, RandomCrop, ToTensor, ToPILImage, CenterCrop, Resize, Normalize
+import torchvision.transforms as transforms
+from PIL import Image
 #=================== Utils ===================#
+
 def is_image_file(filename):
     if filename.startswith('._'):
         return
     return any(filename.endswith(extension) for extension in [".png", ".jpg", ".jpeg"])
 
 #=================== Testing ===================#
+
+def train_lr_transform(crop_size, upscale_factor):
+    return Compose([
+        ToPILImage(),
+        Resize(128 // upscale_factor, interpolation=Image.BICUBIC),
+        ToTensor()
+    ])
+
 
 class DataValSet(data.Dataset):
     def __init__(self, root_dir):
@@ -33,9 +44,45 @@ class DataValSet(data.Dataset):
         return len(self.hr_names)
 
     def __getitem__(self, index):
-        input     = np.asarray(imread(join(self.input_dir, self.input_names[index])).transpose((2, 0, 1)), np.float32).copy() / 255
+
+        # input = np.asarray(imread(join(self.input_dir, self.input_names[index])).transpose((2, 0, 1)),
+        #                    np.float32).copy() / 255
+        # target = np.asarray(imread(join(self.sr_dir, self.hr_names[index])).transpose((2, 0, 1)),
+        #                     np.float32).copy() / 255
+        # return input, target
+
+
+        #modify
+
+        input_HR_Blur = np.asarray(imread(join(self.input_dir, self.input_names[index])).transpose((2, 0, 1)),
+                           np.float32).copy() / 255
+        input_HR_Blurx64 = np.asarray(imread(join(self.input_dir, self.input_names[index])),
+                           np.float32).copy() / 255
+
+        input     = np.asarray(imread(join(self.input_dir, self.input_names[index])), np.float32).copy() / 255
         target    = np.asarray(imread(join(self.sr_dir, self.hr_names[index])).transpose((2, 0, 1)), np.float32).copy() / 255
-        return input, target
+        transform_list = [ToTensor()]
+        transform = transforms.Compose(transform_list)
+
+
+        lr_input = transform(input)
+        lr_tranform = train_lr_transform(128, 4)
+        lr_input = lr_tranform(lr_input)
+
+        lrx64 = transform(input_HR_Blurx64)
+        lr_tranformx64 = train_lr_transform(128, 2)
+        lrx64 = lr_tranformx64(lrx64)
+
+        lrx16 = transform(input)
+        lr_tranformx16 = train_lr_transform(128, 8)
+        lrx16 = lr_tranformx16(lrx16)
+
+        lrx8 = transform(input)
+        lr_tranformx8 = train_lr_transform(128, 16)
+        lrx8 = lr_tranformx8(lrx8)
+
+
+        return input, target, lr_input, input_HR_Blur, lrx64, lrx8, lrx16
 
 #=================== Training ===================#
 

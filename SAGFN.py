@@ -4,8 +4,8 @@ import math
 import torch.nn.init as init
 import os
 from ESRGAN.ESRGAN import RRDBNet
-
-
+from MSRN.MSRN import MSRN
+from SRN.network64 import SRNDeblurNet
 
 class Self_Attn(nn.Module):
     """ Self attention Layer"""
@@ -243,11 +243,14 @@ class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
         self.deblurMoudle      = self._make_net(_DeblurringMoudle)
-        self.srMoudle          = self._make_net(_SRMoudle)
+        # self.deblurMoudle      = SRNDeblurNet()
+        # self.srMoudle          = self._make_net(_SRMoudle)
         # self.srMoudle          = RRDBNet(in_nc=3, out_nc=3, nf=64, nb=23, gc=32, norm_type=None)
+        self.srMoudle          = MSRN()
         self.geteMoudle        = self._make_net(_GateMoudle)
         self.reconstructMoudle = self._make_net(_ReconstructMoudle)
 
+    # def forward(self, x, y, z, gated, isTest):
     def forward(self, x, gated, isTest):
         if isTest == True:
             origin_size = x.size()
@@ -256,6 +259,8 @@ class Net(nn.Module):
             x           = nn.functional.upsample(x, size=input_size, mode='bilinear')
 
         deblur_feature, deblur_out = self.deblurMoudle(x)
+        # deblurx32, deblurx16, deblurx8, deblur_feature = self.deblurMoudle(x, y, z)
+
         sr_feature = self.srMoudle(x)
         if gated == True:
             scoremap = self.geteMoudle(torch.cat((deblur_feature, x, sr_feature), 1))

@@ -45,37 +45,53 @@ class AlignedDataset(BaseDataset):
         A = AB[:, 0:128, 0:128]
         B = AB[:, 0:128, 128:256]
 
-        lr_tranform = train_lr_transform(self.opt.fineSize, 4)
+        lr_tranform_x32 = train_lr_transform(128, 4)
+        lr_tranform_x16 = train_lr_transform(64, 4)
+        lr_tranform_x8 = train_lr_transform(32, 4)
 
+        HR_Sharp = B.clone()
+        A = lr_tranform_x32(A)
+        B = lr_tranform_x32(B)
+        A1x128 = A
+        A2x64  = lr_tranform_x16(A1x128)
+        A3x32  = lr_tranform_x8(A2x64)
 
-        D = A.clone()
-        A = lr_tranform(A)
-        C = lr_tranform(B)
+        B1x128 = B
+        B2x64  = lr_tranform_x16(B1x128)
+        B3x32  = lr_tranform_x8(B2x64)
 
-
+        # D = A.clone()
+        # A = lr_tranform(A)
+        # C = lr_tranform(B)
 
         if (not self.opt.no_flip) and random.random() < 0.5:  # 翻转图片，扩展数据量
             # idx = [i for i in range(A.size(2) - 1, -1, -1)]
             # idx = torch.LongTensor(idx)
             # A = A.index_select(2, idx)
             # B = B.index_select(2, idx)
-            idx_A = [i for i in range(A.size(2) - 1, -1, -1)]
-            idx_B = [i for i in range(B.size(2) - 1, -1, -1)]
-            idx_C = [i for i in range(C.size(2) - 1, -1, -1)]
-            idx_D = [i for i in range(D.size(2) - 1, -1, -1)]
+            idx_A1 = [i for i in range(A1x128.size(2) - 1, -1, -1)]
+            idx_A2 = [i for i in range(A2x64.size(2) - 1, -1, -1)]
+            idx_A3 = [i for i in range(A3x32.size(2) - 1, -1, -1)]
+            idx_B1 = [i for i in range(B1x128.size(2) - 1, -1, -1)]
+            idx_B2 = [i for i in range(B2x64.size(2) - 1, -1, -1)]
+            idx_B3 = [i for i in range(B3x32.size(2) - 1, -1, -1)]
+            idx_HRsharp = [i for i in range(HR_Sharp.size(2) - 1, -1, -1)]
+            idx_A1 = torch.LongTensor(idx_A1)
+            idx_A2 = torch.LongTensor(idx_A2)
+            idx_A3 = torch.LongTensor(idx_A3)
+            idx_B1 = torch.LongTensor(idx_B1)
+            idx_B2 = torch.LongTensor(idx_B2)
+            idx_B3 = torch.LongTensor(idx_B3)
+            idx_HRsharp = torch.LongTensor(idx_HRsharp)
+            A1x128 = A1x128.index_select(2, idx_A1)
+            A2x64 = A2x64.index_select(2, idx_A2)
+            A3x32 = A3x32.index_select(2, idx_A3)
+            B1x128 = B1x128.index_select(2, idx_B1)
+            B2x64 = B2x64.index_select(2, idx_B2)
+            B3x32 = B3x32.index_select(2, idx_B3)
+            HR_Sharp = HR_Sharp.index_select(2, idx_HRsharp)
 
-            idx_A = torch.LongTensor(idx_A)
-            idx_B = torch.LongTensor(idx_B)
-            idx_C = torch.LongTensor(idx_C)
-            idx_D = torch.LongTensor(idx_D)
-
-            A = A.index_select(2, idx_A)
-            B = B.index_select(2, idx_B)
-            C = C.index_select(2, idx_C)
-            D = D.index_select(2, idx_D)
-
-
-        return {'LR_Blur': A, 'HR_Sharp': B, 'LR_Sharp': C, 'HR_Blur': D} # A是LR_Blur， B是HR_Sharp, C是LR_Sharp
+        return {'A1x32': A1x128, 'A2x16': A2x64, 'A3x8': A3x32, 'B1x32': B1x128, 'B2x16': B2x64, 'B3x8': B3x32, 'HR_Sharp': HR_Sharp} # A是LR_Blur， B是HR_Sharp, C是LR_Sharp
 
     def __len__(self):
         return len(self.AB_paths)
@@ -87,20 +103,7 @@ class AlignedDataset(BaseDataset):
 def train_lr_transform(crop_size, upscale_factor):
     return Compose([
         ToPILImage(),
-        Resize(128 // upscale_factor, interpolation=Image.BICUBIC),
+        Resize(crop_size // upscale_factor, interpolation=Image.BICUBIC),
         ToTensor()
     ])
 
-def train_lr_transformx16(crop_size, upscale_factor):
-    return Compose([
-        ToPILImage(),
-        Resize(64 // upscale_factor, interpolation=Image.BICUBIC),
-        ToTensor()
-    ])
-
-def train_lr_transformx8(crop_size, upscale_factor):
-    return Compose([
-        ToPILImage(),
-        Resize(32 // upscale_factor, interpolation=Image.BICUBIC),
-        ToTensor()
-    ])
