@@ -82,8 +82,12 @@ def test(test_gen, model, criterion, SR_dir):
 
 
             LR_Blur = batch[2].to(device)
-            LRB = transforms.ToPILImage()(LR_Blur.cpu()[0])
-            LRB.save('D:/pythonWorkplace/GFN-GAN/datasets/LR-GOPRO/Validation_4/LR/' + str(iteration) + '.jpg')
+            LR_Blurx16 = batch[6].to(device)
+            LR_Blurx8 = batch[5].to(device)
+
+            # LRB = transforms.ToPILImage()(LR_Blur.cpu()[0])
+            # LRB.save('D:/pythonWorkplace/GFN-GAN/datasets/LR-GOPRO/Validation_4/LR/' + str(iteration) + '.jpg')
+
 
             if opt.isTest == True:
                 test_Tensor = torch.cuda.FloatTensor().resize_(1).zero_() + 1
@@ -95,7 +99,10 @@ def test(test_gen, model, criterion, SR_dir):
                 gated_Tensor = torch.cuda.FloatTensor().resize_(1).zero_()
 
             start_time = time.perf_counter()#-------------------------begin to deal with an image's time
-            [lr_deblur, sr] = model(LR_Blur, gated_Tensor, test_Tensor)
+
+
+
+            [deblurx32, deblurx16, deblurx8, sr] = model(LR_Blur, LR_Blurx16, LR_Blurx8, gated_Tensor, test_Tensor)
             #modify
             sr = torch.clamp(sr, min=0, max=1)
             torch.cuda.synchronize()#wait for CPU & GPU time syn
@@ -144,7 +151,7 @@ if opt.intermediate_process:
 else:
     test_dir = 'models/'
     test_list = [x for x in sorted(os.listdir(test_dir)) if is_pkl(x)]
-    test_list = ['D:/pythonWorkplace/GFN-GAN/models/weight_test/GFN_epoch_55.pkl']
+    test_list = ['D:/pythonWorkplace/GFN-GAN/models/weight_test/GFN_epoch_25.pkl']
     print("Testing on the given 3-step trained model which stores in /models, and ends with pkl.")
 
     model = torch.load(join(test_dir, test_list[0]))

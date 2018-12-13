@@ -62,9 +62,9 @@ FirstTrian = False
 
 
 training_settings=[
-    {'nEpochs': 25, 'lr': 1e-4, 'step':  7, 'lr_decay': 0.5, 'lambda_db': 0.5, 'gated': False},
+    {'nEpochs': 25, 'lr': 1e-4, 'step':  7, 'lr_decay': 0.5, 'lambda_db': 0.6, 'gated': False},
     {'nEpochs': 60, 'lr': 1e-4, 'step': 30, 'lr_decay': 0.1, 'lambda_db': 0.5, 'gated': False},
-    {'nEpochs': 55, 'lr': 5e-5, 'step': 25, 'lr_decay': 0.1, 'lambda_db':   0, 'gated': True}
+    {'nEpochs': 55, 'lr': 5e-5, 'step': 25, 'lr_decay': 0.1, 'lambda_db': 0.2, 'gated': True}
 ]
 
 
@@ -216,14 +216,14 @@ def train(train_gen, model, netD, criterion, optimizer, epoch, lr):
         loss3 = cri_perception(sr, HR)
         loss4 = criterion(sr, HR)
         image_loss = opt.lambda_db * (loss1 + loss2) + (loss3 + loss4)
-        Loss_G = image_loss + loss_G_GAN * 0.01
+        Loss_G = image_loss + loss_G_GAN * 0.05
         epoch_loss += Loss_G
         optimizer.zero_grad()
         Loss_G.backward()
         optimizer.step()
 
 
-        if iteration % 50 == 0:
+        if iteration % 200 == 0:
             # print("===> Epoch[{}]: G_GAN:{:.4f}, LossG:{:.4f}, LossD:{:.4f}, gredient_penalty:{:.4f}, d_real_loss:{:.4f}, d_fake_loss:{:.4f}"
             #       .format(epoch, loss_G_GAN.cpu(), mse.cpu(), loss_D.cpu(), gradient_penalty.cpu(), d_loss_real.cpu(), d_loss_fake.cpu()))
 

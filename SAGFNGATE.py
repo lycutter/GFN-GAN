@@ -264,7 +264,12 @@ class Net(nn.Module):
 
         sr_feature = self.srMoudle(x)
         if gated == True:
+
+            # scoremap = self.geteMoudle(torch.cat((deblur_feature, x, sr_feature), 1))
             scoremap = self.geteMoudle(torch.cat((deblur_feature, x, sr_feature), 1))
+            dot1 = torch.mul(deblur_feature, scoremap)
+            dot2 = torch.mul(sr_feature, scoremap)
+            scoremap = dot1 + dot2
         else:
             scoremap = torch.cuda.FloatTensor().resize_(sr_feature.shape).zero_()+1
         repair_feature = torch.mul(scoremap, deblur_feature)

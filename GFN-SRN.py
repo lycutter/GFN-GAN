@@ -23,11 +23,11 @@ from torchvision import transforms
 from data.data_loader import CreateDataLoader
 # from networks.Discriminator import Discriminator
 from networks.Discriminator import Discriminator
-from ESRGANLoss import GANLoss, VGGFeatureExtractor
+from ESRGANLossPeception import GANLoss, VGGFeatureExtractor, TVLoss
 
 # Training settings
 parser = argparse.ArgumentParser(description="PyTorch Train")
-parser.add_argument("--batchSize", type=int, default=32, help="Training batch size")
+parser.add_argument("--batchSize", type=int, default=16, help="Training batch size")
 parser.add_argument("--start_training_step", type=int, default=1, help="Training step")
 parser.add_argument("--nEpochs", type=int, default=60, help="Number of epochs to train")
 parser.add_argument("--lr", type=float, default=3e-5, help="Learning rate, default=1e-4")
@@ -64,7 +64,7 @@ FirstTrian = False
 training_settings=[
     {'nEpochs': 25, 'lr': 1e-4, 'step':  7, 'lr_decay': 0.5, 'lambda_db': 0.5, 'gated': False},
     {'nEpochs': 60, 'lr': 1e-4, 'step': 30, 'lr_decay': 0.1, 'lambda_db': 0.5, 'gated': False},
-    {'nEpochs': 55, 'lr': 5e-5, 'step': 25, 'lr_decay': 0.1, 'lambda_db':   0, 'gated': True}
+    {'nEpochs': 55, 'lr': 5e-5, 'step': 25, 'lr_decay': 0.1, 'lambda_db': 0.1, 'gated': True}
 ]
 
 
@@ -144,7 +144,6 @@ def train(train_gen, model, criterion, optimizer, epoch, lr):
 
 
 
-
         if opt.isTest == True:
             test_Tensor = torch.cuda.FloatTensor().resize_(1).zero_()+1.
 
@@ -161,13 +160,19 @@ def train(train_gen, model, criterion, optimizer, epoch, lr):
         deblurx32, deblurx16, deblurx8, sr = model(Blurx32, Blurx16, Blurx8, gated_Tensor, test_Tensor)
 
 
+
+
+
         l1 = criterion(deblurx32, Sharpx32)
         l2 = criterion(deblurx16, Sharpx16)
         l3 = criterion(deblurx8, Sharpx8)
 
-        loss = criterion(sr, HR_Sharp)
+        l1p = cri_perception(deblurx32, Sharpx32)
 
-        loss = loss + (l1 + l2 + l3) * opt.lambda_db
+
+        image_loss = criterion(sr, HR_Sharp) + cri_perception(sr, HR_Sharp)
+
+        loss = image_loss + (l1 + l2 + l3 + l1p) * opt.lambda_db
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -185,14 +190,8 @@ def train(train_gen, model, criterion, optimizer, epoch, lr):
                 .format(epoch, loss, lr) + '\n')
             f.close()
 
-
             Blurx32 = transforms.ToPILImage()(Blurx32.cpu()[0])
             Blurx32.save('./pictureShow/Blurx32.jpg')
-
-
-
-            sharpx32 = transforms.ToPILImage()(Sharpx32.cpu()[0])
-            sharpx32.save('./pictureShow/deblur_sharpx32.jpg')
 
             deblurx32 = torch.clamp(deblurx32, min=0, max=1)
             deblurx32 = transforms.ToPILImage()(deblurx32.cpu()[0])
@@ -202,7 +201,8 @@ def train(train_gen, model, criterion, optimizer, epoch, lr):
             sr = transforms.ToPILImage()(sr.cpu()[0])
             sr.save('./pictureShow/sr.jpg')
 
-
+            sharpx32 = transforms.ToPILImage()(Sharpx32.cpu()[0])
+            sharpx32.save('./pictureShow/deblur_sharpx32.jpg')
 
             hr = transforms.ToPILImage()(HR_Sharp.cpu()[0])
             hr.save('./pictureShow/hr.jpg')
@@ -237,6 +237,7 @@ model = model.to(device)
 criterion = torch.nn.L1Loss(size_average=True)
 criterion = criterion.to(device)
 cri_perception = VGGFeatureExtractor().to(device)
+criterionTV = TVLoss().to(device)
 optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), 0.0001, [0.9, 0.999])
 
 print()

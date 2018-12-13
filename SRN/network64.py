@@ -73,6 +73,7 @@ class SRNDeblurNet(nn.Module):
     """
 
     def __init__(self, upsample_fn=partial(torch.nn.functional.upsample, mode='bilinear'), xavier_init_all=True):
+    # def __init__(self, upsample_fn=partial(torch.nn.functional.upsample, align_corners='bilinear'), xavier_init_all=True):
         super(type(self), self).__init__()
         self.upsample_fn = upsample_fn
         self.inblock = EBlock(3 + 3, 64, 1)
