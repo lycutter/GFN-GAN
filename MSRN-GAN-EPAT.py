@@ -40,7 +40,7 @@ parser.add_argument("--scale", default=4, type=int, help="Scale factor, Default:
 parser.add_argument("--lambda_db", type=float, default=0.5, help="Weight of deblurring loss, default=0.5")
 parser.add_argument("--gated", type=bool, default=False, help="Activated gate module")
 parser.add_argument("--isTest", type=bool, default=False, help="Test or not")
-# parser.add_argument('--dataset', required=True, help='Path of the training dataset(.h5)')
+
 
 
 # add lately
