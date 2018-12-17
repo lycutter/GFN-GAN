@@ -19,7 +19,7 @@ from Motion.Motion import Net
 import random
 import re
 from torchvision import transforms
-
+from math import log10
 from data.data_loader import CreateDataLoader
 # from networks.Discriminator import Discriminator
 from networks.Discriminator import Discriminator
@@ -27,7 +27,7 @@ from ESRGANLossPeception import GANLoss, VGGFeatureExtractor
 
 # Training settings
 parser = argparse.ArgumentParser(description="PyTorch Train")
-parser.add_argument("--batchSize", type=int, default=8, help="Training batch size")
+parser.add_argument("--batchSize", type=int, default=16, help="Training batch size")
 parser.add_argument("--start_training_step", type=int, default=1, help="Training step")
 parser.add_argument("--nEpochs", type=int, default=60, help="Number of epochs to train")
 parser.add_argument("--lr", type=float, default=3e-5, help="Learning rate, default=1e-4")
@@ -45,7 +45,7 @@ parser.add_argument("--isTest", type=bool, default=False, help="Test or not")
 
 # add lately
 parser.add_argument('--dataset_mode', type=str, default='aligned', help='chooses how datasets are loaded. [unaligned | aligned | single]')
-parser.add_argument('--dataroot', required=True, help='path to images (should have subfolders trainA, trainB, valA, valB, etc)')
+parser.add_argument('--dataroot', help='path to images (should have subfolders trainA, trainB, valA, valB, etc)', default='D:\pythonWorkplace\Dataset\CelebA_Pair\combo')
 parser.add_argument('--phase', type=str, default='train', help='train, val, test, etc')
 parser.add_argument('--loadSizeX', type=int, default=640, help='scale images to this size')
 parser.add_argument('--loadSizeY', type=int, default=360, help='scale images to this size')
@@ -62,9 +62,9 @@ FirstTrian = False
 
 
 training_settings=[
-    {'nEpochs': 25, 'lr': 1e-4, 'step':  7, 'lr_decay': 0.5, 'lambda_db': 0.6, 'gated': False},
-    {'nEpochs': 60, 'lr': 1e-4, 'step': 30, 'lr_decay': 0.1, 'lambda_db': 0.5, 'gated': False},
-    {'nEpochs': 55, 'lr': 5e-5, 'step': 25, 'lr_decay': 0.1, 'lambda_db': 0.2, 'gated': True}
+    {'nEpochs': 25, 'lr': 1e-4, 'step': 10, 'lr_decay': 0.95, 'lambda_db': 0.7, 'gated': False},
+    {'nEpochs': 60, 'lr': 9e-5, 'step': 10, 'lr_decay': 0.9, 'lambda_db': 0.5, 'gated': False},
+    {'nEpochs': 55, 'lr': 5e-5, 'step': 10, 'lr_decay': 0.85, 'lambda_db': 0.3, 'gated': True}
 ]
 
 
@@ -153,17 +153,17 @@ def train(train_gen, model, criterion, optimizer, epoch, lr):
         # HRP.save('./pictureShow/HRP.jpg')
 
 
-        sr = model(LR_Blur)
+        deblur, sr = model(LR_Blur)
 
+        loss_deblur = criterion(deblur, LR_Deblur)
 
-        # calculate loss_D
+        mse = criterionMSE(deblur, LR_Deblur)
+        psnr_single = 10 * log10(1 / mse)
+        psnr_sr = 10 * log10(1/criterionMSE(sr, HR))
 
-
-        # calculate loss_G
-
-        loss3 = cri_perception(sr, HR)
-        loss4 = criterion(sr, HR)
-        image_loss = loss3 + loss4
+        # loss3 = cri_perception(sr, HR)
+        loss_sr = criterion(sr, HR)
+        image_loss = loss_deblur * opt.lambda_db + loss_sr
         epoch_loss += image_loss
         optimizer.zero_grad()
         image_loss.backward()
@@ -171,21 +171,26 @@ def train(train_gen, model, criterion, optimizer, epoch, lr):
 
 
         if iteration % 200 == 0:
-            print("===> Epoch[{}]: loss:{:.4f}"
-                  .format(epoch, image_loss))
+            print("===> Epoch[{}]: loss:{:.4f}, psnr:{:.4f}, psnr_sr:{:.4f}"
+                  .format(epoch, image_loss, psnr_single, psnr_sr))
 
             f = open(FilePath, 'a')
             f.write(
-                "===> Epoch[{}]: loss:{:.4f}, lr:{:.6f}"
-                .format(epoch, image_loss, lr) + '\n')
+                "===> Epoch[{}]: loss:{:.4f}, lr:{:.6f}, psnr:{:.4f}, psnr_sr:{:.4f}"
+                .format(epoch, image_loss, lr, psnr_single, psnr_sr) + '\n')
             f.close()
 
 
             sr_save = torch.clamp(sr, min=0, max=1)
             sr_save = transforms.ToPILImage()(sr_save.cpu()[0])
             sr_save.save('./pictureShow/sr_save.png')
+            deblur_lr_save = torch.clamp(deblur, min=0, max=1)
+            deblur_lr_save = transforms.ToPILImage()(deblur_lr_save.cpu()[0])
+            deblur_lr_save.save('./pictureShow/deblur_lr_save.png')
             hr_save = transforms.ToPILImage()(HR.cpu()[0])
             hr_save.save('./pictureShow/hr_save.png')
+            deblur_sharp_save = transforms.ToPILImage()(LR_Deblur.cpu()[0])
+            deblur_sharp_save.save('./pictureShow/deblur_sharp_save.png')
             blur_lr_save = transforms.ToPILImage()(LR_Blur.cpu()[0])
             blur_lr_save.save('./pictureShow/blur_lr_save.png')
 
@@ -215,6 +220,7 @@ else:
 model = model.to(device)
 print('# generator parameters:', sum(param.numel() for param in model.parameters()))
 criterion = torch.nn.L1Loss(size_average=True)
+criterionMSE = torch.nn.MSELoss(size_average=True).to(device)
 criterion = criterion.to(device)
 cri_perception = VGGFeatureExtractor().to(device)
 optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), 0.0001, [0.9, 0.999])

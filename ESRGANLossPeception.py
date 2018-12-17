@@ -44,7 +44,8 @@ class VGGFeatureExtractor(nn.Module):
     def __init__(self):
         super(VGGFeatureExtractor, self).__init__()
         vgg = vgg19(pretrained=True)
-        loss_network = nn.Sequential(*list(vgg.features)[:9]).eval()
+        loss_network = nn.Sequential(*list(vgg.features)[:34]).eval()
+        self.vggNet = loss_network
         for param in loss_network.parameters():
             param.requires_grad = False
         self.loss_network = loss_network

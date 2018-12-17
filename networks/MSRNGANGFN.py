@@ -232,7 +232,7 @@ class _ReconstructMoudle(nn.Module):
         res1 = self.resBlock(x)
         con1 = self.conv1(res1)
         pixelshuffle1 = self.relu1(self.pixelShuffle1(con1))
-        pixelshuffle1, p1 = self.attn1(pixelshuffle1)
+        # pixelshuffle1, p1 = self.attn1(pixelshuffle1)
         con2 = self.conv2(pixelshuffle1)
         pixelshuffle2 = self.relu2(self.pixelShuffle2(con2))
         # pixelshuffle2, p2 = self.attn1(pixelshuffle2)

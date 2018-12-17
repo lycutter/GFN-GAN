@@ -2,6 +2,7 @@
 1.去掉tvloss
 2.更改perception层至前9层
 3.去掉deblur的perception loss
+4.Adam设置默认
 """
 
 from __future__ import print_function
@@ -15,7 +16,7 @@ from SAGFN_MSRN_SRN import Net
 import random
 import re
 from torchvision import transforms
-
+from math import log10
 from data.data_loader import CreateDataLoader
 # from networks.Discriminator import Discriminator
 from networks.Discriminator import Discriminator
@@ -57,10 +58,16 @@ FilePath = './models/loss.txt'
 FirstTrian = False
 
 
+# training_settings=[
+#     {'nEpochs': 25, 'lr': 1e-4, 'step':  7, 'lr_decay': 0.5, 'lambda_db': 0.5, 'gated': False},
+#     {'nEpochs': 60, 'lr': 1e-4, 'step': 30, 'lr_decay': 0.1, 'lambda_db': 0.5, 'gated': False},
+#     {'nEpochs': 55, 'lr': 5e-5, 'step': 25, 'lr_decay': 0.1, 'lambda_db': 0.1, 'gated': True}
+# ]
+
 training_settings=[
-    {'nEpochs': 25, 'lr': 1e-4, 'step':  7, 'lr_decay': 0.5, 'lambda_db': 0.5, 'gated': False},
-    {'nEpochs': 60, 'lr': 1e-4, 'step': 30, 'lr_decay': 0.1, 'lambda_db': 0.5, 'gated': False},
-    {'nEpochs': 55, 'lr': 5e-5, 'step': 25, 'lr_decay': 0.1, 'lambda_db': 0.1, 'gated': True}
+    {'nEpochs': 25, 'lr': 1e-4, 'step': 10, 'lr_decay': 0.9, 'lambda_db': 0.5, 'gated': False},
+    {'nEpochs': 60, 'lr': 1e-4, 'step': 10, 'lr_decay': 0.8, 'lambda_db': 0.5, 'gated': False},
+    {'nEpochs': 55, 'lr': 5e-5, 'step':  5, 'lr_decay': 0.8, 'lambda_db': 0.2, 'gated': True}
 ]
 
 
@@ -125,6 +132,7 @@ def checkpoint(step, epoch):
 
 def train(train_gen, model, criterion, optimizer, epoch, lr):
     epoch_loss = 0
+    psnr = 0
     train_gen = train_gen.load_data() ###############
     for iteration, batch in enumerate(train_gen):
         #input, targetdeblur, targetsr
@@ -163,10 +171,14 @@ def train(train_gen, model, criterion, optimizer, epoch, lr):
         l2 = criterion(deblurx16, Sharpx16)
         l3 = criterion(deblurx8, Sharpx8)
 
-        perceptionloss = cri_perception(sr, HR_Sharp)
+        mse = criterionMSE(deblurx32, Sharpx32)
+        psnr_single = 10 * log10(1 / mse)
+        psnr += psnr_single
+        psnr_sr = 10 * log10(1 / criterionMSE(sr, HR_Sharp))
+        # perceptionloss = cri_perception(sr, HR_Sharp)
 
 
-        image_loss = criterion(sr, HR_Sharp) + perceptionloss
+        image_loss = criterion(sr, HR_Sharp)
 
         loss = image_loss + (l1 + l2 + l3) * opt.lambda_db
         optimizer.zero_grad()
@@ -177,13 +189,13 @@ def train(train_gen, model, criterion, optimizer, epoch, lr):
         if iteration % 200 == 0:
 
 
-            print("===> Epoch[{}]: loss:{:.4f}, perceptionloss:{:.4f}"
-                  .format(epoch, loss, perceptionloss))
+            print("===> Epoch[{}]: loss:{:.4f}, psnr_deblur:{:.4f}, psnr_sr:{:.4f}"
+                  .format(epoch, loss, psnr_single, psnr_sr))
 
             f = open(FilePath, 'a')
             f.write(
-                "===> Epoch[{}]: loss:{:.4f}, lr:{:.6f}"
-                .format(epoch, loss, lr) + '\n')
+                "===> Epoch[{}]: loss:{:.4f}, lr:{:.6f}, psnr_deblur:{:.4f}, psnr_sr:{:.4f}"
+                .format(epoch, loss, lr, psnr_single, psnr_sr) + '\n')
             f.close()
 
             Blurx32 = transforms.ToPILImage()(Blurx32.cpu()[0])
@@ -230,11 +242,12 @@ else:
     mkdir_steptraing()
 
 model = model.to(device)
+criterionMSE = torch.nn.MSELoss().to(device)
 criterion = torch.nn.L1Loss(size_average=True)
 criterion = criterion.to(device)
 cri_perception = VGGFeatureExtractor().to(device)
 criterionTV = TVLoss().to(device)
-optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), 0.0001, [0.9, 0.999])
+optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), 0.0001)
 
 print()
 

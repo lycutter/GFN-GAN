@@ -151,7 +151,7 @@ if opt.intermediate_process:
 else:
     test_dir = 'models/'
     test_list = [x for x in sorted(os.listdir(test_dir)) if is_pkl(x)]
-    test_list = ['D:/pythonWorkplace/GFN-GAN/models/weight_test/GFN_epoch_25.pkl']
+    test_list = ['D:/pythonWorkplace/GFN-GAN/models/weight_test/GFN_epoch_1.pkl']
     print("Testing on the given 3-step trained model which stores in /models, and ends with pkl.")
 
     model = torch.load(join(test_dir, test_list[0]))

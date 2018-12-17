@@ -46,7 +46,8 @@ parser.add_argument("--isTest", type=bool, default=False, help="Test or not")
 
 # add lately
 parser.add_argument('--dataset_mode', type=str, default='aligned', help='chooses how datasets are loaded. [unaligned | aligned | single]')
-parser.add_argument('--dataroot', required=True, help='path to images (should have subfolders trainA, trainB, valA, valB, etc)')
+# parser.add_argument('--dataroot', help='path to images (should have subfolders trainA, trainB, valA, valB, etc)', default='D:\pythonWorkplace\Dataset\CelebA_Pair\combo')
+parser.add_argument('--dataroot', help='path to images (should have subfolders trainA, trainB, valA, valB, etc)', default='D:\pythonWorkplace\Dataset\CelebA_Pair\combo')
 parser.add_argument('--phase', type=str, default='train', help='train, val, test, etc')
 parser.add_argument('--loadSizeX', type=int, default=640, help='scale images to this size')
 parser.add_argument('--loadSizeY', type=int, default=360, help='scale images to this size')

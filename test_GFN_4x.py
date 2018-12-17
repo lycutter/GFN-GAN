@@ -96,6 +96,7 @@ def test(test_gen, model, criterion, SR_dir):
 
             start_time = time.perf_counter()#-------------------------begin to deal with an image's time
             [lr_deblur, sr] = model(LR_Blur, gated_Tensor, test_Tensor)
+            # [lr_deblur, sr] = model(LR_Blur)
             #modify
             sr = torch.clamp(sr, min=0, max=1)
             torch.cuda.synchronize()#wait for CPU & GPU time syn
@@ -144,7 +145,7 @@ if opt.intermediate_process:
 else:
     test_dir = 'models/'
     test_list = [x for x in sorted(os.listdir(test_dir)) if is_pkl(x)]
-    test_list = ['D:/pythonWorkplace/GFN-GAN/models/weight_test/GFN_epoch_55.pkl']
+    test_list = ['D:/pythonWorkplace/GFN-GAN/models/weight_test/GFN_epoch_10.pkl']
     print("Testing on the given 3-step trained model which stores in /models, and ends with pkl.")
 
     model = torch.load(join(test_dir, test_list[0]))
