@@ -31,7 +31,7 @@ parser = argparse.ArgumentParser(description="PyTorch LapSRN Test")
 parser.add_argument("--scale", default=4, type=int, help="scale factor, Default: 4")
 parser.add_argument("--gated", type=bool, default=True, help="Activated gate module")
 parser.add_argument("--isTest", type=bool, default=True, help="Test or not")
-parser.add_argument('--dataset', help='Path of the validation dataset',default='D:\pythonWorkplace\GFN-GAN\datasets\LR-GOPRO\Validation_4')
+parser.add_argument('--dataset', help='Path of the validation dataset',default='D:\pythonWorkplace\GFN-GAN\datasets\LR-GOPRO\Validation_new')
 parser.add_argument("--intermediate_process", default="", type=str, help="Test on intermediate pkl (default: none)")
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -85,6 +85,10 @@ def test(test_gen, model, criterion, SR_dir):
             LR_Blurx16 = batch[6].to(device)
             LR_Blurx8 = batch[5].to(device)
 
+            LR_Blurx128 = batch[7].to(device)
+            LR_Blurx64 = batch[4].to(device)
+
+
             # LRB = transforms.ToPILImage()(LR_Blur.cpu()[0])
             # LRB.save('D:/pythonWorkplace/GFN-GAN/datasets/LR-GOPRO/Validation_4/LR/' + str(iteration) + '.jpg')
 
@@ -103,6 +107,7 @@ def test(test_gen, model, criterion, SR_dir):
 
 
             [deblurx32, deblurx16, deblurx8, sr] = model(LR_Blur, LR_Blurx16, LR_Blurx8, gated_Tensor, test_Tensor)
+            # sr, _, _, _ = model(LR_Blurx128, LR_Blurx64, LR_Blur)
             #modify
             sr = torch.clamp(sr, min=0, max=1)
             torch.cuda.synchronize()#wait for CPU & GPU time syn
@@ -151,7 +156,7 @@ if opt.intermediate_process:
 else:
     test_dir = 'models/'
     test_list = [x for x in sorted(os.listdir(test_dir)) if is_pkl(x)]
-    test_list = ['D:/pythonWorkplace/GFN-GAN/models/weight_test/GFN_epoch_1.pkl']
+    test_list = ['D:/pythonWorkplace/GFN-GAN/models/weight_test/GFN_epoch_35.pkl']
     print("Testing on the given 3-step trained model which stores in /models, and ends with pkl.")
 
     model = torch.load(join(test_dir, test_list[0]))

@@ -44,18 +44,12 @@ class VGGFeatureExtractor(nn.Module):
     def __init__(self):
         super(VGGFeatureExtractor, self).__init__()
         vgg = vgg19(pretrained=True)
-        loss_network = nn.Sequential(*list(vgg.features)[:34]).eval()
-        self.vggNet = loss_network
+        loss_network = nn.Sequential(*list(vgg.features)[:18]).eval()
         for param in loss_network.parameters():
             param.requires_grad = False
         self.loss_network = loss_network
         self.perception_loss = nn.MSELoss()
 
     def forward(self, real_hr, fake_hr):
-        # return self.perception_loss(real_hr, fake_hr)
-        perception_real = self.loss_network(real_hr)
-        perception_fake = self.loss_network(fake_hr)
-        perception = self.perception_loss(perception_real, perception_fake)
-        return perception
-
-
+        return self.perception_loss(real_hr, fake_hr)
+        # return self.perception_loss(self.loss_network(real_hr), self.loss_network(fake_hr))

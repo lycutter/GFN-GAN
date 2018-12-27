@@ -45,7 +45,9 @@ parser.add_argument("--isTest", type=bool, default=False, help="Test or not")
 
 # add lately
 parser.add_argument('--dataset_mode', type=str, default='aligned', help='chooses how datasets are loaded. [unaligned | aligned | single]')
-parser.add_argument('--dataroot', required=True, help='path to images (should have subfolders trainA, trainB, valA, valB, etc)')
+# parser.add_argument('--dataroot', required=True, help='path to images (should have subfolders trainA, trainB, valA, valB, etc)')
+parser.add_argument('--dataroot', help='path to images (should have subfolders trainA, trainB, valA, valB, etc)', default='D:\pythonWorkplace\Dataset\CelebA_Pair\combo')
+
 parser.add_argument('--phase', type=str, default='train', help='train, val, test, etc')
 parser.add_argument('--loadSizeX', type=int, default=640, help='scale images to this size')
 parser.add_argument('--loadSizeY', type=int, default=360, help='scale images to this size')
@@ -282,6 +284,9 @@ criterion = criterion.to(device)
 cri_perception = VGGFeatureExtractor().to(device)
 optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), 0.0001, [0.9, 0.999])
 optimizer_D = torch.optim.Adam(filter(lambda p: p.requires_grad, netD.parameters()), 0.0002, [0.9, 0.999])
+
+print('# generator parameters:', sum(param.numel() for param in model.parameters()))
+print('# discriminator parameters:', sum(param.numel() for param in netD.parameters()))
 print()
 
 

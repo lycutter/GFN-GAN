@@ -23,11 +23,11 @@ from math import log10
 from data.data_loader import CreateDataLoader
 from networks.Discriminator import Discriminator
 from ESRGANLossPeception import GANLoss, VGGFeatureExtractor
-from TextualLoss.vgg import VGG, GramMatrix, GramMSELoss
+from TextualLoss.vgg import GramMatrix, GramMSELoss
 
 # Training settings
 parser = argparse.ArgumentParser(description="PyTorch Train")
-parser.add_argument("--batchSize", type=int, default=8, help="Training batch size")
+parser.add_argument("--batchSize", type=int, default=16, help="Training batch size")
 parser.add_argument("--start_training_step", type=int, default=1, help="Training step")
 parser.add_argument("--nEpochs", type=int, default=60, help="Number of epochs to train")
 parser.add_argument("--lr", type=float, default=3e-5, help="Learning rate, default=1e-4")
@@ -270,8 +270,8 @@ def train(train_gen, model, netD, criterion, optimizer, epoch, lr):
 
 
         # deblur_perception = criterion(lr_deblur, LR_Deblur)
-        deblur_perception = cri_perception(lr_deblur, LR_Deblur)
-        deblur_pixel = criterion(lr_deblur, LR_Deblur)
+        deblur_perception = cri_perception(lr_deblur.detach(), LR_Deblur)
+        deblur_pixel = criterion(lr_deblur.detach(), LR_Deblur)
 
         # for param in model.srMoudle:
         #     param.requires_grad = False
@@ -281,14 +281,14 @@ def train(train_gen, model, netD, criterion, optimizer, epoch, lr):
         #     param.requires_grad = False
 
 
-        sr_perception = cri_perception(sr, HR)
-        sr_pixel = criterion(sr, HR)
+        sr_perception = cri_perception(sr.detach(), HR)
+        sr_pixel = criterion(sr.detach(), HR)
         perceptionloss = sr_perception + opt.lambda_db * deblur_perception
         pixelloss = sr_pixel + opt.lambda_db * deblur_pixel
         psnr_sr = 10 * log10(1 / sr_pixel)
         psnr_deblur = 10 * log10(1 / deblur_pixel)
-        loss = perceptionloss * 0.01 + textual_loss + pixelloss
-        Loss_G = loss + loss_G_GAN * 0.02
+        loss = perceptionloss * 0.02 + textual_loss + pixelloss
+        Loss_G = loss + loss_G_GAN * 0.01
         epoch_loss += Loss_G
         optimizer.zero_grad()
         Loss_G.backward()
@@ -354,7 +354,7 @@ else:
 
 model = model.to(device)
 netD = netD.to(device)
-criterion = torch.nn.MSELoss(size_average=True)
+criterion = torch.nn.L1Loss(size_average=True)
 criterion = criterion.to(device)
 cri_perception = VGGFeatureExtractor().to(device)
 cri_gan =  GANLoss('vanilla', 1.0, 0.0).to(device)

@@ -45,13 +45,14 @@ parser.add_argument("--isTest", type=bool, default=False, help="Test or not")
 
 # add lately
 parser.add_argument('--dataset_mode', type=str, default='aligned', help='chooses how datasets are loaded. [unaligned | aligned | single]')
-parser.add_argument('--dataroot', required=True, help='path to images (should have subfolders trainA, trainB, valA, valB, etc)')
+# parser.add_argument('--dataroot', required=True, help='path to images (should have subfolders trainA, trainB, valA, valB, etc)')
 parser.add_argument('--phase', type=str, default='train', help='train, val, test, etc')
 parser.add_argument('--loadSizeX', type=int, default=640, help='scale images to this size')
 parser.add_argument('--loadSizeY', type=int, default=360, help='scale images to this size')
 parser.add_argument('--fineSize', type=int, default=256, help='then crop to this size')
 parser.add_argument('--no_flip', action='store_true', help='if specified, do not flip the images for data augmentation')
 parser.add_argument('--max_dataset_size', type=int, default=float("inf"), help='Maximum number of samples allowed per dataset. If the dataset directory contains more than max_dataset_size, only a subset is loaded.')
+parser.add_argument('--dataroot', help='path to images (should have subfolders trainA, trainB, valA, valB, etc)', default='D:\pythonWorkplace\Dataset\CelebA_Pair\combo')
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -130,6 +131,7 @@ def checkpoint(step, epoch):
 
 def train(train_gen, model, netD, criterion, optimizer, epoch, lr):
     epoch_loss = 0
+    total_image_loss = 0
     train_gen = train_gen.load_data() ###############
     for iteration, batch in enumerate(train_gen):
         #input, targetdeblur, targetsr
@@ -218,12 +220,13 @@ def train(train_gen, model, netD, criterion, optimizer, epoch, lr):
         image_loss = opt.lambda_db * (loss1 + loss2) + (loss3 + loss4)
         Loss_G = image_loss + loss_G_GAN * 0.05
         epoch_loss += Loss_G
+        total_image_loss += loss4
         optimizer.zero_grad()
         Loss_G.backward()
         optimizer.step()
 
 
-        if iteration % 10 == 0:
+        if iteration % 200 == 0:
             # print("===> Epoch[{}]: G_GAN:{:.4f}, LossG:{:.4f}, LossD:{:.4f}, gredient_penalty:{:.4f}, d_real_loss:{:.4f}, d_fake_loss:{:.4f}"
             #       .format(epoch, loss_G_GAN.cpu(), mse.cpu(), loss_D.cpu(), gradient_penalty.cpu(), d_loss_real.cpu(), d_loss_fake.cpu()))
 
@@ -249,9 +252,9 @@ def train(train_gen, model, netD, criterion, optimizer, epoch, lr):
             blur_lr_save = transforms.ToPILImage()(LR_Blur.cpu()[0])
             blur_lr_save.save('./pictureShow/blur_lr_save.png')
 
-    print("===>Epoch{} Complete: Avg loss is :{:4f}".format(epoch, epoch_loss / len(trainloader)))
+    print("===>Epoch{} Complete: Avg loss is :{:4f}, image_loss:{:.4f}".format(epoch, epoch_loss / len(trainloader), total_image_loss))
     f = open(FilePath, 'a')
-    f.write("===>Epoch{} Complete: Avg loss is :{:4f}\n".format(epoch, epoch_loss / len(trainloader)))
+    f.write("===>Epoch{} Complete: Avg loss is :{:4f}, , image_loss:{:.4f}\n".format(epoch, epoch_loss / len(trainloader), total_image_loss))
     f.close()
 
 opt = parser.parse_args()

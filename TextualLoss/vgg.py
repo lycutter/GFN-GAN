@@ -23,7 +23,6 @@ class GramMSELoss(nn.Module):
         out = nn.MSELoss()(GramMatrix()(input), target)
         return (out)
 
-
 # vgg definition that conveniently let's you grab the outputs from any layer
 class VGG(nn.Module):
     def __init__(self, pool='max'):
@@ -82,4 +81,3 @@ class VGG(nn.Module):
         out['r54'] = F.relu(self.conv5_4(out['r53']))
         out['p5'] = self.pool5(out['r54'])
         return [out[key] for key in out_keys]
-

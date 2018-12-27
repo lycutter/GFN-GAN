@@ -143,7 +143,6 @@ class _DeblurringMoudle(nn.Module):
         res3   = self.resBlock3(con3)
         res3   = torch.add(res3, con3)
         decon1 = self.deconv1(res3)
-        decon1, p1 = self.attn1(decon1)
         deblur_feature = self.deconv2(decon1)
         deblur_out = self.convout(torch.add(deblur_feature, con1))
         return deblur_feature, deblur_out
@@ -172,7 +171,6 @@ class _SRMoudle(nn.Module):
     def forward(self, x):
         con1 = self.relu(self.conv1(x))
         res1 = self.resBlock(con1)
-        res1, p1 = self.attn1(res1)
         con2 = self.conv2(res1)
         sr_feature = torch.add(con2, con1)
         return sr_feature
@@ -232,10 +230,8 @@ class _ReconstructMoudle(nn.Module):
         res1 = self.resBlock(x)
         con1 = self.conv1(res1)
         pixelshuffle1 = self.relu1(self.pixelShuffle1(con1))
-        pixelshuffle1, p1 = self.attn1(pixelshuffle1)
         con2 = self.conv2(pixelshuffle1)
         pixelshuffle2 = self.relu2(self.pixelShuffle2(con2))
-        # pixelshuffle2, p2 = self.attn1(pixelshuffle2)
         con3 = self.relu3(self.conv3(pixelshuffle2))
         sr_deblur = self.conv4(con3)
         return sr_deblur

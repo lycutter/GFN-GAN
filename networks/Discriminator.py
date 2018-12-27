@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from spectral import SpectralNorm
 from SAGFN import Self_Attn
+
 class Discriminator(nn.Module):
 
     def __init__(self):

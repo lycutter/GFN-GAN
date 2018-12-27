@@ -15,19 +15,19 @@ from torch.autograd import Variable
 import os
 from os.path import join
 import torch
-from SAGFN import Net
+from networks.SAGFN import Net
 import random
 import re
 from torchvision import transforms
-from math import log10
+import time
 from data.data_loader import CreateDataLoader
+# from networks.Discriminator import Discriminator
 from networks.Discriminator import Discriminator
-from ESRGANLossPeception import GANLoss, VGGFeatureExtractor
-from TextualLoss.vgg import VGG, GramMatrix, GramMSELoss
+from ESRGANLoss import GANLoss, VGGFeatureExtractor
 
 # Training settings
 parser = argparse.ArgumentParser(description="PyTorch Train")
-parser.add_argument("--batchSize", type=int, default=8, help="Training batch size")
+parser.add_argument("--batchSize", type=int, default=16, help="Training batch size")
 parser.add_argument("--start_training_step", type=int, default=1, help="Training step")
 parser.add_argument("--nEpochs", type=int, default=60, help="Number of epochs to train")
 parser.add_argument("--lr", type=float, default=3e-5, help="Learning rate, default=1e-4")
@@ -40,19 +40,19 @@ parser.add_argument("--scale", default=4, type=int, help="Scale factor, Default:
 parser.add_argument("--lambda_db", type=float, default=0.5, help="Weight of deblurring loss, default=0.5")
 parser.add_argument("--gated", type=bool, default=False, help="Activated gate module")
 parser.add_argument("--isTest", type=bool, default=False, help="Test or not")
-
+# parser.add_argument('--dataset', required=True, help='Path of the training dataset(.h5)')
 
 
 # add lately
 parser.add_argument('--dataset_mode', type=str, default='aligned', help='chooses how datasets are loaded. [unaligned | aligned | single]')
 # parser.add_argument('--dataroot', required=True, help='path to images (should have subfolders trainA, trainB, valA, valB, etc)')
-parser.add_argument('--dataroot', help='path to images (should have subfolders trainA, trainB, valA, valB, etc)', default='D:\pythonWorkplace\Dataset\CelebA_Pair\combo')
 parser.add_argument('--phase', type=str, default='train', help='train, val, test, etc')
 parser.add_argument('--loadSizeX', type=int, default=640, help='scale images to this size')
 parser.add_argument('--loadSizeY', type=int, default=360, help='scale images to this size')
 parser.add_argument('--fineSize', type=int, default=256, help='then crop to this size')
 parser.add_argument('--no_flip', action='store_true', help='if specified, do not flip the images for data augmentation')
 parser.add_argument('--max_dataset_size', type=int, default=float("inf"), help='Maximum number of samples allowed per dataset. If the dataset directory contains more than max_dataset_size, only a subset is loaded.')
+parser.add_argument('--dataroot', help='path to images (should have subfolders trainA, trainB, valA, valB, etc)', default='D:\pythonWorkplace\Dataset\CelebA_Pair\combo')
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -63,9 +63,9 @@ FirstTrian = False
 
 
 training_settings=[
-    {'nEpochs': 25, 'lr': 1e-4, 'step': 10, 'lr_decay': 0.9, 'lambda_db': 0.6, 'gated': False},
-    {'nEpochs': 60, 'lr': 1e-4, 'step': 5, 'lr_decay':  0.9, 'lambda_db': 0.5, 'gated': False},
-    {'nEpochs': 55, 'lr': 5e-5, 'step': 5, 'lr_decay': 0.8, 'lambda_db':  0.2, 'gated': True}
+    {'nEpochs': 25, 'lr': 1e-4, 'step':  7, 'lr_decay': 0.5, 'lambda_db': 0.6, 'gated': False},
+    {'nEpochs': 60, 'lr': 1e-4, 'step': 30, 'lr_decay': 0.1, 'lambda_db': 0.5, 'gated': False},
+    {'nEpochs': 55, 'lr': 5e-5, 'step': 25, 'lr_decay': 0.1, 'lambda_db': 0.2, 'gated': True}
 ]
 
 
@@ -131,6 +131,7 @@ def checkpoint(step, epoch):
 
 def train(train_gen, model, netD, criterion, optimizer, epoch, lr):
     epoch_loss = 0
+    total_image_loss = 0
     train_gen = train_gen.load_data() ###############
     for iteration, batch in enumerate(train_gen):
         #input, targetdeblur, targetsr
@@ -146,8 +147,13 @@ def train(train_gen, model, netD, criterion, optimizer, epoch, lr):
         LR_Deblur = LR_Deblur.to(device)
         HR = HR.to(device)
 
-        HR_vgg = HR.clone()
-        LR_vgg = LR_Deblur.clone()
+        # # show the pictures
+        # LRB = transforms.ToPILImage()(LR_Blur.cpu()[0])
+        # LRB.save('./pictureShow/LRB.jpg')
+        # LRD = transforms.ToPILImage()(LR_Deblur.cpu()[0])
+        # LRD.save('./pictureShow/LRD.jpg')
+        # HRP = transforms.ToPILImage()(HR.cpu()[0])
+        # HRP.save('./pictureShow/HRP.jpg')
 
         if opt.isTest == True:
             test_Tensor = torch.cuda.FloatTensor().resize_(1).zero_()+1.
@@ -164,68 +170,6 @@ def train(train_gen, model, netD, criterion, optimizer, epoch, lr):
 
         [lr_deblur, sr] = model(LR_Blur, gated_Tensor, test_Tensor)
 
-        deblur_vgg, sr_vgg = lr_deblur.clone(), sr.clone()
-
-        sr_real_style_loss_out = []
-        sr_fake_style_loss_out = []
-
-        deblur_real_style_loss_out = []
-        deblur_fake_style_loss_out = []
-
-        # calculate textual loss
-        # SR
-        j = 0
-        for index, layer in enumerate(vgg19):
-            if index == 21:
-                break
-            HR_vgg = layer(HR_vgg)
-            if index == loss_layer[j]:
-                j += 1
-                sr_real_style_loss_out.append(HR_vgg)
-        sr_style_targets = [GramMatrix()(A).detach() for A in sr_real_style_loss_out]
-
-        sr_targets = sr_style_targets
-
-        j = 0
-        for index, layer in enumerate(vgg19):
-            if index == 21:
-                break
-            sr_vgg = layer(sr_vgg)
-            if index == loss_layer[j]:
-                j += 1
-                sr_fake_style_loss_out.append(sr_vgg)
-        sr_layer_losses = [style_weights[a] * loss_fns[a](A, sr_targets[a]) for a, A in
-                           enumerate(sr_fake_style_loss_out)]
-        sr_textual_loss = sum(sr_layer_losses)
-
-        # deblur textual loss
-
-        j = 0
-        for index, layer in enumerate(vgg19):
-            if index == 21:
-                break
-            LR_vgg = layer(LR_vgg)
-            if index == loss_layer[j]:
-                j += 1
-                deblur_real_style_loss_out.append(LR_vgg)
-        deblur_style_targets = [GramMatrix()(A).detach() for A in deblur_real_style_loss_out]
-        deblur_targets = deblur_style_targets
-
-        j = 0
-        for index, layer in enumerate(vgg19):
-            if index == 21:
-                break
-            deblur_vgg = layer(deblur_vgg)
-            if index == loss_layer[j]:
-                j += 1
-                deblur_fake_style_loss_out.append(deblur_vgg)
-        deblur_layer_losses = [style_weights[a] * loss_fns[a](A, deblur_targets[a]) for a, A in
-                               enumerate(deblur_fake_style_loss_out)]
-        deblur_textual_loss = sum(deblur_layer_losses)
-
-        textual_loss = sr_textual_loss + opt.lambda_db * deblur_textual_loss
-        # textual_loss = 0
-
 
         # calculate loss_D
         fake_sr = netD(sr)
@@ -233,6 +177,8 @@ def train(train_gen, model, netD, criterion, optimizer, epoch, lr):
 
         d_loss_real = torch.mean(real_sr)
         d_loss_fake = torch.mean(fake_sr)
+
+
 
         # Compute gradient penalty of HR and sr
         alpha = torch.rand(HR.size(0), 1, 1, 1).cuda().expand_as(HR)
@@ -267,29 +213,14 @@ def train(train_gen, model, netD, criterion, optimizer, epoch, lr):
 
         # calculate loss_G
         loss_G_GAN = - netD(sr).mean()
-
-
-        # deblur_perception = criterion(lr_deblur, LR_Deblur)
-        deblur_perception = cri_perception(lr_deblur, LR_Deblur)
-        deblur_pixel = criterion(lr_deblur, LR_Deblur)
-
-        # for param in model.srMoudle:
-        #     param.requires_grad = False
-        # for param in model.geteMoudle:
-        #     param.requires_grad = False
-        # for param in model.reconstructMoudle:
-        #     param.requires_grad = False
-
-
-        sr_perception = cri_perception(sr, HR)
-        sr_pixel = criterion(sr, HR)
-        perceptionloss = sr_perception + opt.lambda_db * deblur_perception
-        pixelloss = sr_pixel + opt.lambda_db * deblur_pixel
-        psnr_sr = 10 * log10(1 / sr_pixel)
-        psnr_deblur = 10 * log10(1 / deblur_pixel)
-        loss = perceptionloss * 0.01 + textual_loss + pixelloss
-        Loss_G = loss + loss_G_GAN * 0.02
+        loss1 = criterion(lr_deblur, LR_Deblur)
+        loss2 = cri_perception(lr_deblur, LR_Deblur)
+        loss3 = cri_perception(sr, HR)
+        loss4 = criterion(sr, HR)
+        image_loss = opt.lambda_db * (loss1 + loss2) + (loss3 + loss4)
+        Loss_G = image_loss + loss_G_GAN * 0.05
         epoch_loss += Loss_G
+        total_image_loss += loss4
         optimizer.zero_grad()
         Loss_G.backward()
         optimizer.step()
@@ -299,13 +230,14 @@ def train(train_gen, model, netD, criterion, optimizer, epoch, lr):
             # print("===> Epoch[{}]: G_GAN:{:.4f}, LossG:{:.4f}, LossD:{:.4f}, gredient_penalty:{:.4f}, d_real_loss:{:.4f}, d_fake_loss:{:.4f}"
             #       .format(epoch, loss_G_GAN.cpu(), mse.cpu(), loss_D.cpu(), gradient_penalty.cpu(), d_loss_real.cpu(), d_loss_fake.cpu()))
 
-            print("===> Epoch[{}]: G_GAN:{:.4f}, lossG:{:.4f}, image:{:.4f}, textual:{:.4f}, perception:{:.4f}, d_real:{:.4f}, d_fake:{:.4f}, sr:{:.4f}, deblur:{:.4f}"
-                  .format(epoch, loss_G_GAN.cpu(), Loss_G.cpu(), pixelloss, textual_loss, perceptionloss, d_loss_real.cpu(), d_loss_fake.cpu(), psnr_sr, psnr_deblur))
+            print("===> Epoch[{}]: G_GAN:{:.4f}, image_loss:{:.4f}, LossG:{:.4f}, LossD:{:.4f}, penalty:{:.4f}, d_real:{:.4f}, d_fake:{:.4f}"
+                  .format(epoch, loss_G_GAN.cpu(), image_loss.cpu(), Loss_G.cpu(), loss_D.cpu(), gradient_penalty.cpu(), d_loss_real.cpu(), d_loss_fake.cpu()))
 
             f = open(FilePath, 'a')
             f.write(
-                "===> Epoch[{}]: G_GAN:{:.4f}, lossG:{:.4f}, image:{:.4f}, textual:{:.4f}, perception:{:.4f}, d_real_loss:{:.6f}, d_fake_loss:{:.6f}, lr:{:.8f}, sr:{:.4f}, deblur:{:.4f}"
-                .format(epoch, loss_G_GAN.cpu(), Loss_G.cpu(), pixelloss, textual_loss, perceptionloss, d_loss_real.cpu(), d_loss_fake.cpu(), lr, psnr_sr, psnr_deblur) + '\n')
+                "===> Epoch[{}]: G_GAN:{:.4f}, image_loss:{:.4f}, LossG:{:.4f}, LossD:{:.4f}, d_real_loss:{:.6f}, d_fake_loss:{:.6f}, penalty:{:.4f}, lr:{:.8f}"
+                .format(epoch, loss_G_GAN.cpu(), image_loss.cpu(), Loss_G.cpu(), loss_D.cpu(), d_loss_real.cpu(), d_loss_fake.cpu(),
+                        gradient_penalty.cpu(), lr) + '\n')
             f.close()
             sr_save = torch.clamp(sr, min=0, max=1)
             sr_save = transforms.ToPILImage()(sr_save.cpu()[0])
@@ -320,9 +252,11 @@ def train(train_gen, model, netD, criterion, optimizer, epoch, lr):
             blur_lr_save = transforms.ToPILImage()(LR_Blur.cpu()[0])
             blur_lr_save.save('./pictureShow/blur_lr_save.png')
 
-    print("===>Epoch{} Complete: Avg loss is :{:4f}".format(epoch, epoch_loss / len(trainloader)))
+            time.sleep(15)
+
+    print("===>Epoch{} Complete: Avg loss is :{:4f}, image_loss:{:.4f}".format(epoch, epoch_loss / len(trainloader), total_image_loss))
     f = open(FilePath, 'a')
-    f.write("===>Epoch{} Complete: Avg loss is :{:4f}\n".format(epoch, epoch_loss / len(trainloader)))
+    f.write("===>Epoch{} Complete: Avg loss is :{:4f}, image_loss:{:.4f}\n".format(epoch, epoch_loss / len(trainloader), total_image_loss))
     f.close()
 
 opt = parser.parse_args()
@@ -346,31 +280,16 @@ else:
     netD = Discriminator()
     mkdir_steptraing()
 
-# model = torch.load('models/1/GFN_epoch_1.pkl')
-# model.load_state_dict(model.state_dict())
-# netD = torch.load('models/1/GFN_D_epoch_1.pkl')
-# netD.load_state_dict(netD.state_dict())
-
-
 model = model.to(device)
 netD = netD.to(device)
-criterion = torch.nn.MSELoss(size_average=True)
+criterion = torch.nn.L1Loss(size_average=True)
 criterion = criterion.to(device)
 cri_perception = VGGFeatureExtractor().to(device)
-cri_gan =  GANLoss('vanilla', 1.0, 0.0).to(device)
 
-# textual init
-vgg19 = cri_perception.vggNet
-loss_layer = [1, 6, 11, 20]
-loss_fns = [GramMSELoss()] * len(loss_layer)
-if torch.cuda.is_available():
-    loss_fns = [loss_fn.cuda() for loss_fn in loss_fns]
-style_weights = [1e3 / n ** 2 for n in [64, 128, 256, 512]]
-
-optimizer = torch.optim.RMSprop(filter(lambda p: p.requires_grad, model.parameters()), 0.0001)
-optimizer_D = torch.optim.RMSprop(filter(lambda p: p.requires_grad, netD.parameters()), 0.0002)
 print('# generator parameters:', sum(param.numel() for param in model.parameters()))
 print('# discriminator parameters:', sum(param.numel() for param in netD.parameters()))
+optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), 0.0001, [0.9, 0.999])
+optimizer_D = torch.optim.Adam(filter(lambda p: p.requires_grad, netD.parameters()), 0.0002, [0.9, 0.999])
 print()
 
 

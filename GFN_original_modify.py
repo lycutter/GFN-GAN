@@ -63,11 +63,10 @@ FirstTrian = False
 
 
 training_settings=[
-    {'nEpochs': 25, 'lr': 1e-4, 'step':  5, 'lr_decay': 0.95, 'lambda_db': 0.5, 'gated': False},
+    {'nEpochs': 25, 'lr': 1e-4, 'step': 10, 'lr_decay': 0.9, 'lambda_db': 0.5, 'gated': False},
     {'nEpochs': 60, 'lr': 1e-4, 'step':  5, 'lr_decay': 0.9, 'lambda_db': 0.5, 'gated': False},
-    {'nEpochs': 55, 'lr': 5e-5, 'step':  5, 'lr_decay': 0.8, 'lambda_db': 0.2, 'gated': True}
+    {'nEpochs': 55, 'lr': 5e-5, 'step':  5, 'lr_decay': 0.8, 'lambda_db': 0.1, 'gated': True}
 ]
-
 
 def adjust_learning_rate(epoch):
     lr = opt.lr * (opt.lr_decay ** (epoch // opt.step))

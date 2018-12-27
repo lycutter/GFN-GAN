@@ -23,11 +23,11 @@ from math import log10
 from data.data_loader import CreateDataLoader
 from networks.Discriminator import Discriminator
 from ESRGANLossPeception import GANLoss, VGGFeatureExtractor
-from TextualLoss.vgg import VGG, GramMatrix, GramMSELoss
-
+from TextualLoss.vgg import GramMatrix, GramMSELoss
+import time
 # Training settings
 parser = argparse.ArgumentParser(description="PyTorch Train")
-parser.add_argument("--batchSize", type=int, default=8, help="Training batch size")
+parser.add_argument("--batchSize", type=int, default=16, help="Training batch size")
 parser.add_argument("--start_training_step", type=int, default=1, help="Training step")
 parser.add_argument("--nEpochs", type=int, default=60, help="Number of epochs to train")
 parser.add_argument("--lr", type=float, default=3e-5, help="Learning rate, default=1e-4")
@@ -63,9 +63,9 @@ FirstTrian = False
 
 
 training_settings=[
-    {'nEpochs': 25, 'lr': 1e-4, 'step': 10, 'lr_decay': 0.9, 'lambda_db': 0.6, 'gated': False},
-    {'nEpochs': 60, 'lr': 1e-4, 'step': 5, 'lr_decay':  0.9, 'lambda_db': 0.5, 'gated': False},
-    {'nEpochs': 55, 'lr': 5e-5, 'step': 5, 'lr_decay': 0.8, 'lambda_db':  0.2, 'gated': True}
+    {'nEpochs': 15, 'lr': 1e-4, 'step': 5, 'lr_decay':  0.9, 'lambda_db': 0.6, 'gated': False},
+    {'nEpochs': 25, 'lr': 1e-4, 'step': 5, 'lr_decay':  0.9, 'lambda_db': 0.5, 'gated': False},
+    {'nEpochs': 20, 'lr': 5e-5, 'step': 5, 'lr_decay':  0.8, 'lambda_db': 0.2, 'gated': True}
 ]
 
 
@@ -270,8 +270,8 @@ def train(train_gen, model, netD, criterion, optimizer, epoch, lr):
 
 
         # deblur_perception = criterion(lr_deblur, LR_Deblur)
-        deblur_perception = cri_perception(lr_deblur, LR_Deblur)
-        deblur_pixel = criterion(lr_deblur, LR_Deblur)
+        deblur_perception = cri_perception(lr_deblur.detach(), LR_Deblur)
+        deblur_pixel = criterion(lr_deblur.detach(), LR_Deblur)
 
         # for param in model.srMoudle:
         #     param.requires_grad = False
@@ -281,14 +281,14 @@ def train(train_gen, model, netD, criterion, optimizer, epoch, lr):
         #     param.requires_grad = False
 
 
-        sr_perception = cri_perception(sr, HR)
-        sr_pixel = criterion(sr, HR)
+        sr_perception = cri_perception(sr.detach(), HR)
+        sr_pixel = criterion(sr.detach(), HR)
         perceptionloss = sr_perception + opt.lambda_db * deblur_perception
         pixelloss = sr_pixel + opt.lambda_db * deblur_pixel
         psnr_sr = 10 * log10(1 / sr_pixel)
         psnr_deblur = 10 * log10(1 / deblur_pixel)
-        loss = perceptionloss * 0.01 + textual_loss + pixelloss
-        Loss_G = loss + loss_G_GAN * 0.02
+        loss = textual_loss + pixelloss
+        Loss_G = loss + loss_G_GAN * 0.0002
         epoch_loss += Loss_G
         optimizer.zero_grad()
         Loss_G.backward()
@@ -320,6 +320,8 @@ def train(train_gen, model, netD, criterion, optimizer, epoch, lr):
             blur_lr_save = transforms.ToPILImage()(LR_Blur.cpu()[0])
             blur_lr_save.save('./pictureShow/blur_lr_save.png')
 
+            time.sleep(15)
+
     print("===>Epoch{} Complete: Avg loss is :{:4f}".format(epoch, epoch_loss / len(trainloader)))
     f = open(FilePath, 'a')
     f.write("===>Epoch{} Complete: Avg loss is :{:4f}\n".format(epoch, epoch_loss / len(trainloader)))
@@ -346,10 +348,7 @@ else:
     netD = Discriminator()
     mkdir_steptraing()
 
-# model = torch.load('models/1/GFN_epoch_1.pkl')
-# model.load_state_dict(model.state_dict())
-# netD = torch.load('models/1/GFN_D_epoch_1.pkl')
-# netD.load_state_dict(netD.state_dict())
+
 
 
 model = model.to(device)
@@ -367,8 +366,8 @@ if torch.cuda.is_available():
     loss_fns = [loss_fn.cuda() for loss_fn in loss_fns]
 style_weights = [1e3 / n ** 2 for n in [64, 128, 256, 512]]
 
-optimizer = torch.optim.RMSprop(filter(lambda p: p.requires_grad, model.parameters()), 0.0001)
-optimizer_D = torch.optim.RMSprop(filter(lambda p: p.requires_grad, netD.parameters()), 0.0002)
+optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), 0.0001, [0.9, 0.999])
+optimizer_D = torch.optim.Adam(filter(lambda p: p.requires_grad, netD.parameters()), 0.0002, [0.9, 0.999])
 print('# generator parameters:', sum(param.numel() for param in model.parameters()))
 print('# discriminator parameters:', sum(param.numel() for param in netD.parameters()))
 print()

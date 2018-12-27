@@ -15,19 +15,20 @@ from torch.autograd import Variable
 import os
 from os.path import join
 import torch
-from SAGFN import Net
+# from SAGFN import Net
+from networks.GFN_4x_modify import Net
 import random
 import re
 from torchvision import transforms
-from math import log10
 from data.data_loader import CreateDataLoader
+# from networks.Discriminator import Discriminator
 from networks.Discriminator import Discriminator
 from ESRGANLossPeception import GANLoss, VGGFeatureExtractor
 from TextualLoss.vgg import VGG, GramMatrix, GramMSELoss
-
+from math import log10
 # Training settings
 parser = argparse.ArgumentParser(description="PyTorch Train")
-parser.add_argument("--batchSize", type=int, default=8, help="Training batch size")
+parser.add_argument("--batchSize", type=int, default=16, help="Training batch size")
 parser.add_argument("--start_training_step", type=int, default=1, help="Training step")
 parser.add_argument("--nEpochs", type=int, default=60, help="Number of epochs to train")
 parser.add_argument("--lr", type=float, default=3e-5, help="Learning rate, default=1e-4")
@@ -40,12 +41,11 @@ parser.add_argument("--scale", default=4, type=int, help="Scale factor, Default:
 parser.add_argument("--lambda_db", type=float, default=0.5, help="Weight of deblurring loss, default=0.5")
 parser.add_argument("--gated", type=bool, default=False, help="Activated gate module")
 parser.add_argument("--isTest", type=bool, default=False, help="Test or not")
-
+# parser.add_argument('--dataset', required=True, help='Path of the training dataset(.h5)')
 
 
 # add lately
 parser.add_argument('--dataset_mode', type=str, default='aligned', help='chooses how datasets are loaded. [unaligned | aligned | single]')
-# parser.add_argument('--dataroot', required=True, help='path to images (should have subfolders trainA, trainB, valA, valB, etc)')
 parser.add_argument('--dataroot', help='path to images (should have subfolders trainA, trainB, valA, valB, etc)', default='D:\pythonWorkplace\Dataset\CelebA_Pair\combo')
 parser.add_argument('--phase', type=str, default='train', help='train, val, test, etc')
 parser.add_argument('--loadSizeX', type=int, default=640, help='scale images to this size')
@@ -63,9 +63,9 @@ FirstTrian = False
 
 
 training_settings=[
-    {'nEpochs': 25, 'lr': 1e-4, 'step': 10, 'lr_decay': 0.9, 'lambda_db': 0.6, 'gated': False},
-    {'nEpochs': 60, 'lr': 1e-4, 'step': 5, 'lr_decay':  0.9, 'lambda_db': 0.5, 'gated': False},
-    {'nEpochs': 55, 'lr': 5e-5, 'step': 5, 'lr_decay': 0.8, 'lambda_db':  0.2, 'gated': True}
+    {'nEpochs': 6, 'lr': 1e-4, 'step':   3, 'lr_decay': 0.8, 'lambda_db': 0.5, 'gated': False},
+    {'nEpochs': 12, 'lr': 1e-4, 'step':  5, 'lr_decay': 0.8, 'lambda_db': 0.5, 'gated': False},
+    {'nEpochs': 55, 'lr': 5e-5, 'step':  5, 'lr_decay': 0.6, 'lambda_db': 0.2, 'gated': True}
 ]
 
 
@@ -124,12 +124,12 @@ def which_trainingstep_epoch(resume):
 
 def checkpoint(step, epoch):
     model_out_path = "models/{}/GFN_epoch_{}.pkl".format(step, epoch)
-    model_out_path_D = "models/{}/GFN_D_epoch_{}.pkl".format(step, epoch)
+    model_D_out_path = 'models/{}GFN_D_epoch_{}.pkl'.format(step, epoch)
     torch.save(model, model_out_path)
-    torch.save(netD, model_out_path_D)
+    torch.save(netD, model_D_out_path)
     print("===>Checkpoint saved to {}".format(model_out_path))
 
-def train(train_gen, model, netD, criterion, optimizer, epoch, lr):
+def train(train_gen, model, criterion, optimizer, epoch, lr):
     epoch_loss = 0
     train_gen = train_gen.load_data() ###############
     for iteration, batch in enumerate(train_gen):
@@ -148,6 +148,14 @@ def train(train_gen, model, netD, criterion, optimizer, epoch, lr):
 
         HR_vgg = HR.clone()
         LR_vgg = LR_Deblur.clone()
+
+        # # show the pictures
+        # LRB = transforms.ToPILImage()(LR_Blur.cpu()[0])
+        # LRB.save('./pictureShow/LRB.jpg')
+        # LRD = transforms.ToPILImage()(LR_Deblur.cpu()[0])
+        # LRD.save('./pictureShow/LRD.jpg')
+        # HRP = transforms.ToPILImage()(HR.cpu()[0])
+        # HRP.save('./pictureShow/HRP.jpg')
 
         if opt.isTest == True:
             test_Tensor = torch.cuda.FloatTensor().resize_(1).zero_()+1.
@@ -250,7 +258,6 @@ def train(train_gen, model, netD, criterion, optimizer, epoch, lr):
         grad_l2norm = torch.sqrt(torch.sum(grad ** 2, dim=1))
         d_loss_gp = torch.mean((grad_l2norm - 1) ** 2)
 
-
         # Backward + Optimize
         gradient_penalty = LAMBDA * d_loss_gp
         # gradient_penalty_lr = LAMBDA * d_loss_gp_lr
@@ -261,15 +268,9 @@ def train(train_gen, model, netD, criterion, optimizer, epoch, lr):
         loss_D.backward(retain_graph=True)
         optimizer_D.step()
 
-        # for p in netD.parameters():
-        #     p.data.clamp_(-0.01, 0.01)
-
-
         # calculate loss_G
         loss_G_GAN = - netD(sr).mean()
 
-
-        # deblur_perception = criterion(lr_deblur, LR_Deblur)
         deblur_perception = cri_perception(lr_deblur, LR_Deblur)
         deblur_pixel = criterion(lr_deblur, LR_Deblur)
 
@@ -287,8 +288,8 @@ def train(train_gen, model, netD, criterion, optimizer, epoch, lr):
         pixelloss = sr_pixel + opt.lambda_db * deblur_pixel
         psnr_sr = 10 * log10(1 / sr_pixel)
         psnr_deblur = 10 * log10(1 / deblur_pixel)
-        loss = perceptionloss * 0.01 + textual_loss + pixelloss
-        Loss_G = loss + loss_G_GAN * 0.02
+        loss = perceptionloss * 0.02 + textual_loss + pixelloss
+        Loss_G = loss + loss_G_GAN * 0.01
         epoch_loss += Loss_G
         optimizer.zero_grad()
         Loss_G.backward()
@@ -296,8 +297,6 @@ def train(train_gen, model, netD, criterion, optimizer, epoch, lr):
 
 
         if iteration % 200 == 0:
-            # print("===> Epoch[{}]: G_GAN:{:.4f}, LossG:{:.4f}, LossD:{:.4f}, gredient_penalty:{:.4f}, d_real_loss:{:.4f}, d_fake_loss:{:.4f}"
-            #       .format(epoch, loss_G_GAN.cpu(), mse.cpu(), loss_D.cpu(), gradient_penalty.cpu(), d_loss_real.cpu(), d_loss_fake.cpu()))
 
             print("===> Epoch[{}]: G_GAN:{:.4f}, lossG:{:.4f}, image:{:.4f}, textual:{:.4f}, perception:{:.4f}, d_real:{:.4f}, d_fake:{:.4f}, sr:{:.4f}, deblur:{:.4f}"
                   .format(epoch, loss_G_GAN.cpu(), Loss_G.cpu(), pixelloss, textual_loss, perceptionloss, d_loss_real.cpu(), d_loss_fake.cpu(), psnr_sr, psnr_deblur))
@@ -319,6 +318,7 @@ def train(train_gen, model, netD, criterion, optimizer, epoch, lr):
             deblur_sharp_save.save('./pictureShow/deblur_sharp_save.png')
             blur_lr_save = transforms.ToPILImage()(LR_Blur.cpu()[0])
             blur_lr_save.save('./pictureShow/blur_lr_save.png')
+
 
     print("===>Epoch{} Complete: Avg loss is :{:4f}".format(epoch, epoch_loss / len(trainloader)))
     f = open(FilePath, 'a')
@@ -346,18 +346,11 @@ else:
     netD = Discriminator()
     mkdir_steptraing()
 
-# model = torch.load('models/1/GFN_epoch_1.pkl')
-# model.load_state_dict(model.state_dict())
-# netD = torch.load('models/1/GFN_D_epoch_1.pkl')
-# netD.load_state_dict(netD.state_dict())
-
-
 model = model.to(device)
-netD = netD.to(device)
+print('# GFN_deblur parameters:', sum(param.numel() for param in model.parameters()))
 criterion = torch.nn.MSELoss(size_average=True)
 criterion = criterion.to(device)
 cri_perception = VGGFeatureExtractor().to(device)
-cri_gan =  GANLoss('vanilla', 1.0, 0.0).to(device)
 
 # textual init
 vgg19 = cri_perception.vggNet
@@ -367,10 +360,8 @@ if torch.cuda.is_available():
     loss_fns = [loss_fn.cuda() for loss_fn in loss_fns]
 style_weights = [1e3 / n ** 2 for n in [64, 128, 256, 512]]
 
-optimizer = torch.optim.RMSprop(filter(lambda p: p.requires_grad, model.parameters()), 0.0001)
-optimizer_D = torch.optim.RMSprop(filter(lambda p: p.requires_grad, netD.parameters()), 0.0002)
-print('# generator parameters:', sum(param.numel() for param in model.parameters()))
-print('# discriminator parameters:', sum(param.numel() for param in netD.parameters()))
+optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), 0.0001)
+optimizer_D = torch.optim.Adam(filter(lambda p: p.requires_grad, netD.parameters()), 0.0002)
 print()
 
 
@@ -385,6 +376,6 @@ for i in range(opt.start_training_step, 4):
     for epoch in range(opt.start_epoch, opt.nEpochs+1):
         lr = adjust_learning_rate(epoch-1)
         trainloader = CreateDataLoader(opt)
-        train(trainloader, model, netD, criterion, optimizer, epoch, lr)
+        train(trainloader, model, criterion, optimizer, epoch, lr)
         if epoch % 5 == 0:
             checkpoint(i, epoch)

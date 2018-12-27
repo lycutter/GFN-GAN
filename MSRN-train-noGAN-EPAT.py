@@ -21,13 +21,14 @@ import re
 from torchvision import transforms
 from math import log10
 from data.data_loader import CreateDataLoader
+# from networks.Discriminator import Discriminator
 from networks.Discriminator import Discriminator
 from ESRGANLossPeception import GANLoss, VGGFeatureExtractor
-from TextualLoss.vgg import VGG, GramMatrix, GramMSELoss
+from TextualLoss.vgg import GramMatrix, GramMSELoss
 
 # Training settings
 parser = argparse.ArgumentParser(description="PyTorch Train")
-parser.add_argument("--batchSize", type=int, default=8, help="Training batch size")
+parser.add_argument("--batchSize", type=int, default=16, help="Training batch size")
 parser.add_argument("--start_training_step", type=int, default=1, help="Training step")
 parser.add_argument("--nEpochs", type=int, default=60, help="Number of epochs to train")
 parser.add_argument("--lr", type=float, default=3e-5, help="Learning rate, default=1e-4")
@@ -40,7 +41,7 @@ parser.add_argument("--scale", default=4, type=int, help="Scale factor, Default:
 parser.add_argument("--lambda_db", type=float, default=0.5, help="Weight of deblurring loss, default=0.5")
 parser.add_argument("--gated", type=bool, default=False, help="Activated gate module")
 parser.add_argument("--isTest", type=bool, default=False, help="Test or not")
-
+# parser.add_argument('--dataset', required=True, help='Path of the training dataset(.h5)')
 
 
 # add lately
@@ -126,10 +127,10 @@ def checkpoint(step, epoch):
     model_out_path = "models/{}/GFN_epoch_{}.pkl".format(step, epoch)
     model_out_path_D = "models/{}/GFN_D_epoch_{}.pkl".format(step, epoch)
     torch.save(model, model_out_path)
-    torch.save(netD, model_out_path_D)
+    # torch.save(netD, model_out_path_D)
     print("===>Checkpoint saved to {}".format(model_out_path))
 
-def train(train_gen, model, netD, criterion, optimizer, epoch, lr):
+def train(train_gen, model, criterion, optimizer, epoch, lr):
     epoch_loss = 0
     train_gen = train_gen.load_data() ###############
     for iteration, batch in enumerate(train_gen):
@@ -148,6 +149,14 @@ def train(train_gen, model, netD, criterion, optimizer, epoch, lr):
 
         HR_vgg = HR.clone()
         LR_vgg = LR_Deblur.clone()
+
+        # # show the pictures
+        # LRB = transforms.ToPILImage()(LR_Blur.cpu()[0])
+        # LRB.save('./pictureShow/LRB.jpg')
+        # LRD = transforms.ToPILImage()(LR_Deblur.cpu()[0])
+        # LRD.save('./pictureShow/LRD.jpg')
+        # HRP = transforms.ToPILImage()(HR.cpu()[0])
+        # HRP.save('./pictureShow/HRP.jpg')
 
         if opt.isTest == True:
             test_Tensor = torch.cuda.FloatTensor().resize_(1).zero_()+1.
@@ -171,7 +180,10 @@ def train(train_gen, model, netD, criterion, optimizer, epoch, lr):
 
         deblur_real_style_loss_out = []
         deblur_fake_style_loss_out = []
+        # calculate loss_D
 
+        # for p in netD.parameters():
+        #     p.data.clamp_(-0.01, 0.01)
         # calculate textual loss
         # SR
         j = 0
@@ -224,71 +236,21 @@ def train(train_gen, model, netD, criterion, optimizer, epoch, lr):
         deblur_textual_loss = sum(deblur_layer_losses)
 
         textual_loss = sr_textual_loss + opt.lambda_db * deblur_textual_loss
-        # textual_loss = 0
-
-
-        # calculate loss_D
-        fake_sr = netD(sr)
-        real_sr = netD(HR)
-
-        d_loss_real = torch.mean(real_sr)
-        d_loss_fake = torch.mean(fake_sr)
-
-        # Compute gradient penalty of HR and sr
-        alpha = torch.rand(HR.size(0), 1, 1, 1).cuda().expand_as(HR)
-        interpolated = Variable(alpha * HR.data + (1 - alpha) * sr.data, requires_grad=True)
-        disc_interpolates = netD(interpolated)
-
-        grad = torch.autograd.grad(outputs=disc_interpolates,
-                                   inputs=interpolated,
-                                   grad_outputs=torch.ones(disc_interpolates.size()).cuda(),
-                                   retain_graph=True,
-                                   create_graph=True,
-                                   only_inputs=True)[0]
-
-        grad = grad.view(grad.size(0), -1)
-        grad_l2norm = torch.sqrt(torch.sum(grad ** 2, dim=1))
-        d_loss_gp = torch.mean((grad_l2norm - 1) ** 2)
-
-
-        # Backward + Optimize
-        gradient_penalty = LAMBDA * d_loss_gp
-        # gradient_penalty_lr = LAMBDA * d_loss_gp_lr
-
-        loss_D = d_loss_fake - d_loss_real + gradient_penalty
-
-        optimizer_D.zero_grad()
-        loss_D.backward(retain_graph=True)
-        optimizer_D.step()
-
-        # for p in netD.parameters():
-        #     p.data.clamp_(-0.01, 0.01)
 
 
         # calculate loss_G
-        loss_G_GAN = - netD(sr).mean()
 
+        deblur_loss = criterion(lr_deblur.detach(), LR_Deblur)
+        sr_loss = criterion(sr.detach(), HR)
+        pixel_loss = sr_loss + opt.lambda_db * deblur_loss
 
-        # deblur_perception = criterion(lr_deblur, LR_Deblur)
-        deblur_perception = cri_perception(lr_deblur, LR_Deblur)
-        deblur_pixel = criterion(lr_deblur, LR_Deblur)
+        deblur_perception = cri_perception(lr_deblur.detach(), LR_Deblur)
+        sr_perception = cri_perception(sr.detach(), HR)
+        perception_loss = sr_perception + opt.lambda_db * deblur_perception
 
-        # for param in model.srMoudle:
-        #     param.requires_grad = False
-        # for param in model.geteMoudle:
-        #     param.requires_grad = False
-        # for param in model.reconstructMoudle:
-        #     param.requires_grad = False
-
-
-        sr_perception = cri_perception(sr, HR)
-        sr_pixel = criterion(sr, HR)
-        perceptionloss = sr_perception + opt.lambda_db * deblur_perception
-        pixelloss = sr_pixel + opt.lambda_db * deblur_pixel
-        psnr_sr = 10 * log10(1 / sr_pixel)
-        psnr_deblur = 10 * log10(1 / deblur_pixel)
-        loss = perceptionloss * 0.01 + textual_loss + pixelloss
-        Loss_G = loss + loss_G_GAN * 0.02
+        Loss_G = pixel_loss + 0.00 * perception_loss + textual_loss
+        psnr_sr = 10 * log10(1 / sr_loss)
+        psnr_deblur = 10 * log10(1 / deblur_loss)
         epoch_loss += Loss_G
         optimizer.zero_grad()
         Loss_G.backward()
@@ -299,13 +261,13 @@ def train(train_gen, model, netD, criterion, optimizer, epoch, lr):
             # print("===> Epoch[{}]: G_GAN:{:.4f}, LossG:{:.4f}, LossD:{:.4f}, gredient_penalty:{:.4f}, d_real_loss:{:.4f}, d_fake_loss:{:.4f}"
             #       .format(epoch, loss_G_GAN.cpu(), mse.cpu(), loss_D.cpu(), gradient_penalty.cpu(), d_loss_real.cpu(), d_loss_fake.cpu()))
 
-            print("===> Epoch[{}]: G_GAN:{:.4f}, lossG:{:.4f}, image:{:.4f}, textual:{:.4f}, perception:{:.4f}, d_real:{:.4f}, d_fake:{:.4f}, sr:{:.4f}, deblur:{:.4f}"
-                  .format(epoch, loss_G_GAN.cpu(), Loss_G.cpu(), pixelloss, textual_loss, perceptionloss, d_loss_real.cpu(), d_loss_fake.cpu(), psnr_sr, psnr_deblur))
+            print("===> Epoch[{}]: image_loss:{:.4f}, perception:{:.4f}, textual:{:.4f}, sr:{:.4f}, deblur:{:.4f}"
+                  .format(epoch, pixel_loss.cpu(), perception_loss, textual_loss, psnr_sr, psnr_deblur))
 
             f = open(FilePath, 'a')
             f.write(
-                "===> Epoch[{}]: G_GAN:{:.4f}, lossG:{:.4f}, image:{:.4f}, textual:{:.4f}, perception:{:.4f}, d_real_loss:{:.6f}, d_fake_loss:{:.6f}, lr:{:.8f}, sr:{:.4f}, deblur:{:.4f}"
-                .format(epoch, loss_G_GAN.cpu(), Loss_G.cpu(), pixelloss, textual_loss, perceptionloss, d_loss_real.cpu(), d_loss_fake.cpu(), lr, psnr_sr, psnr_deblur) + '\n')
+                "===> Epoch[{}]: image_loss:{:.4f}, perception:{:.4f}, textual:{:.4f}, lr:{:.8f}, sr:{:.4f}, deblur:{:.4f}"
+                .format(epoch, pixel_loss.cpu(), perception_loss, textual_loss, lr, psnr_sr, psnr_deblur) + '\n')
             f.close()
             sr_save = torch.clamp(sr, min=0, max=1)
             sr_save = transforms.ToPILImage()(sr_save.cpu()[0])
@@ -337,27 +299,21 @@ if opt.resume:
         print("Loading from checkpoint {}".format(opt.resume))
         model = torch.load(opt.resume)
         model.load_state_dict(model.state_dict())
-        netD = torch.load(opt.resumeD)
-        netD.load_state_dict(netD.state_dict())
+        # netD = torch.load(opt.resumeD)
+        # netD.load_state_dict(netD.state_dict())
         opt.start_training_step, opt.start_epoch = which_trainingstep_epoch(opt.resume)
 
 else:
     model = Net()
-    netD = Discriminator()
+    # netD = Discriminator()
     mkdir_steptraing()
 
-# model = torch.load('models/1/GFN_epoch_1.pkl')
-# model.load_state_dict(model.state_dict())
-# netD = torch.load('models/1/GFN_D_epoch_1.pkl')
-# netD.load_state_dict(netD.state_dict())
-
-
 model = model.to(device)
-netD = netD.to(device)
+# netD = netD.to(device)
 criterion = torch.nn.MSELoss(size_average=True)
 criterion = criterion.to(device)
 cri_perception = VGGFeatureExtractor().to(device)
-cri_gan =  GANLoss('vanilla', 1.0, 0.0).to(device)
+
 
 # textual init
 vgg19 = cri_perception.vggNet
@@ -367,10 +323,8 @@ if torch.cuda.is_available():
     loss_fns = [loss_fn.cuda() for loss_fn in loss_fns]
 style_weights = [1e3 / n ** 2 for n in [64, 128, 256, 512]]
 
-optimizer = torch.optim.RMSprop(filter(lambda p: p.requires_grad, model.parameters()), 0.0001)
-optimizer_D = torch.optim.RMSprop(filter(lambda p: p.requires_grad, netD.parameters()), 0.0002)
-print('# generator parameters:', sum(param.numel() for param in model.parameters()))
-print('# discriminator parameters:', sum(param.numel() for param in netD.parameters()))
+optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), 0.0001, [0.9, 0.999])
+# optimizer_D = torch.optim.Adam(filter(lambda p: p.requires_grad, netD.parameters()), 0.0002, [0.9, 0.999])
 print()
 
 
@@ -385,6 +339,6 @@ for i in range(opt.start_training_step, 4):
     for epoch in range(opt.start_epoch, opt.nEpochs+1):
         lr = adjust_learning_rate(epoch-1)
         trainloader = CreateDataLoader(opt)
-        train(trainloader, model, netD, criterion, optimizer, epoch, lr)
+        train(trainloader, model, criterion, optimizer, epoch, lr)
         if epoch % 5 == 0:
             checkpoint(i, epoch)

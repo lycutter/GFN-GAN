@@ -64,9 +64,9 @@ FirstTrian = False
 
 
 training_settings=[
-    {'nEpochs': 25, 'lr': 1e-4, 'step': 10, 'lr_decay': 0.9, 'lambda_db': 0.6, 'gated': False},
-    {'nEpochs': 60, 'lr': 1e-4, 'step':  5, 'lr_decay': 0.9, 'lambda_db': 0.5, 'gated': False},
-    {'nEpochs': 55, 'lr': 5e-5, 'step':  5, 'lr_decay': 0.8, 'lambda_db': 0.2, 'gated': True}
+    {'nEpochs': 25, 'lr': 1e-4, 'step': 10, 'lr_decay': 0.9, 'lambda_db': 0.5, 'gated': False},
+    {'nEpochs': 60, 'lr': 1e-4, 'step':  5, 'lr_decay': 0.9, 'lambda_db': 0.3, 'gated': False},
+    {'nEpochs': 55, 'lr': 5e-5, 'step':  5, 'lr_decay': 0.8, 'lambda_db': 0.1, 'gated': True}
 ]
 
 
@@ -127,6 +127,7 @@ def checkpoint(step, epoch):
     model_out_path = "models/{}/GFN_epoch_{}.pkl".format(step, epoch)
     model_out_path_D = "models/{}/GFN_D_epoch_{}.pkl".format(step, epoch)
     torch.save(model, model_out_path)
+    torch.save(netD, model_out_path_D)
     print("===>Checkpoint saved to {}".format(model_out_path))
 
 def train(train_gen, model, criterion, optimizer, epoch, lr):
@@ -170,6 +171,7 @@ def train(train_gen, model, criterion, optimizer, epoch, lr):
         HR_vgg = HR.clone()
         sr_vgg = sr.clone()
         deblur_vgg = deblurx32.clone()
+
         # calculate textual loss
         # SR
         j = 0
@@ -278,7 +280,7 @@ def train(train_gen, model, criterion, optimizer, epoch, lr):
         perceptionloss = sr_perception + deblur_perception * opt.lambda_db
         psnr_sr = 10 * log10(1 / sr_image)
 
-        Loss_G = image_loss + 0.05 * loss_G_GAN + 0.01 * perceptionloss + textual_loss
+        Loss_G = image_loss + 0.01 * loss_G_GAN + 0.01 * perceptionloss + textual_loss
 
 
         optimizer.zero_grad()
@@ -342,10 +344,10 @@ else:
 
 
 
-model = torch.load('models/1/GFN_epoch_1.pkl')
-model.load_state_dict(model.state_dict())
-netD = torch.load('models/1/GFN_D_epoch_1.pkl')
-netD.load_state_dict(netD.state_dict())
+# model = torch.load('models/1/GFN_epoch_1.pkl')
+# model.load_state_dict(model.state_dict())
+# netD = torch.load('models/1/GFN_D_epoch_1.pkl')
+# netD.load_state_dict(netD.state_dict())
 
 model = model.to(device)
 netD = netD.to(device)

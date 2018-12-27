@@ -52,7 +52,8 @@ class MSRN(nn.Module):
         # self.sub_mean = common.MeanShift(args.rgb_range, rgb_mean, rgb_std)
 
         # define head module
-        modules_head = [conv(67, n_feats, kernel_size)]
+        modules_head = [conv(67, n_feats, kernel_size),
+                        conv(n_feats, n_feats, kernel_size)]
 
         # define body module
         modules_body = nn.ModuleList()
@@ -64,8 +65,9 @@ class MSRN(nn.Module):
         modules_tail = [
             nn.Conv2d(n_feats * (self.n_blocks + 1), n_feats, 1, padding=0, stride=1),
             conv(n_feats, n_feats, kernel_size),
-            common.Upsampler(conv, scale, n_feats, act=False),
-            conv(n_feats, 3, kernel_size)]
+            # common.Upsampler(conv, scale, n_feats, act=False),
+            conv(n_feats, n_feats, kernel_size)]
+            # conv(n_feats, 3, kernel_size)]
 
         # self.add_mean = common.MeanShift(args.rgb_range, rgb_mean, rgb_std, 1)
 
